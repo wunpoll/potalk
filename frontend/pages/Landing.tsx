@@ -51,10 +51,11 @@ export default function Landing() {
 
   // Массив скриншотов (добавьте свои изображения)
   const screenshots = [
-    { src: '/images/dashboard.png', title: 'Главная страница', description: 'Список всех встреч и управление' },
-    { src: '/images/room-chat.png', title: 'Комната конференции', description: 'Чат, участники и управление аудио' },
-    { src: '/images/protocol.png', title: 'AI-протокол', description: 'Автоматическое резюме и план действий' },
-    { src: '/images/team.png', title: 'Управление командой', description: 'Приглашение и управление ролями' },
+    { src: '/images/dashboard-meetings.png', title: 'Дашборд встреч', description: 'Список всех встреч и управление ими' },
+    { src: '/images/team-management.png', title: 'Управление командой', description: 'Приглашение участников и управление ролями' },
+    { src: '/images/support-center.png', title: 'Центр поддержки', description: 'Помощь и обратная связь' },
+    { src: '/images/profile-settings.png', title: 'Настройки профиля', description: 'Управление личной информацией' },
+    { src: '/images/analytics-dashboard.png', title: 'Аналитика компании', description: 'Ключевые метрики эффективности' },
   ];
 
   // Функции для переключения слайдов

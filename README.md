@@ -1,53 +1,229 @@
-# Vertex AI Studio Frontend App with Node.js Backend
+# 🎙️ Potalkyem — AI-платформа для аудиоконференций
 
-This repository contains a frontend and a Node.js backend, designed to run together.
-The backend acts as a proxy, handling Google Cloud API calls.
+![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Python](https://img.shields.io/badge/Python-3.11-green)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-brightgreen)
+![React](https://img.shields.io/badge/React-18-cyan)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18-blue)
+![License](https://img.shields.io/badge/license-MIT-orange)
 
-This project is intended for demonstration and prototyping purposes only.
-It is not intended for use in a production environment.
+> **Дипломный проект** — система для проведения аудиоконференций с AI-протоколами и автоматической расшифровкой встреч.
 
-## Prerequisites
+---
 
-To run this application locally, you need:
+## 📖 О проекте
 
-*   **[Google Cloud SDK / gcloud CLI](https://cloud.google.com/sdk/docs/install)**: Follow the instructions to install the SDK.
+**Potalkyem** — веб-приложение для аудиоконференций, которое помогает командам проводить встречи, получать автоматическую расшифровку, формировать краткие протоколы и хранить историю обсуждений.
 
-*   **gcloud Initialization**:
-    *   Initialize the gcloud CLI:
-        ```bash
-        gcloud init
-        ```
-    *   Authenticate for Application Default Credentials (needed to call Google Cloud APIs):
-        ```bash
-        gcloud auth application-default login
-        ```
+Проект объединяет аудиосвязь, AI-обработку речи, управление участниками и удобный интерфейс для командной работы.
 
-*   **Node.js and npm**: Ensure you have Node.js and its package manager, `npm`, installed on your machine.
+---
 
-## Project Structure
+## 🎯 Основные возможности
 
-The project is organized into two main directories:
+| Функция | Описание |
+|--------|---------|
+| 🎤 Аудиоконференции | WebRTC P2P-соединения для голосового общения |
+| 🤖 AI-протоколы | Автоматическая расшифровка и генерация краткого резюме встречи |
+| 💬 Умный чат | Обмен сообщениями, редактирование и ответы |
+| 👥 Команды | Управление ролями, участниками и доступом |
+| 📊 Аналитика | Метрики встреч и статистика активности |
+| 🔒 Безопасность | JWT-аутентификация и разграничение ролей |
 
-*   `frontend/`: Contains the Frontend application code.
-*   `backend/`: Contains the Node.js/Express server code to proxy Google Cloud API calls.
+---
 
-## Backend Environment Variables
+## 🏗️ Архитектура проекта
 
-The `backend/.env.local` file is automatically generated when you download this application.
-It contains essential Google Cloud environment variables pre-configured based on your project settings at the time of download.
+```text
+platform-new/
+├── backend-python/
+│   ├── main.py
+│   ├── models.py
+│   ├── routers/
+│   └── requirements.txt
+├── frontend/
+│   ├── src/
+│   ├── public/
+│   └── package.json
+└── docker-compose.yml
+```
 
-The variables set in `backend/.env.local` are:
-*   `API_BACKEND_PORT`: The port the backend API server listens on (e.g., `5000`).
-*   `API_PAYLOAD_MAX_SIZE`: The maximum size of the request payload accepted by the backend server (e.g., `5mb`).
-*   `GOOGLE_CLOUD_LOCATION`: The Google Cloud region associated with your project.
-*   `GOOGLE_CLOUD_PROJECT`: Your Google Cloud Project ID.
+---
 
-**Note:** These variables are automatically populated during the download process.
-You can modify the values in `backend/.env.local` if you need to change them.
+## 🛠 Технологический стек
 
-## Installation and Running the App
+### Backend
+- FastAPI
+- PostgreSQL
+- SQLAlchemy
+- AsyncPG
+- Redis
+- OpenAI API
 
-To install dependencies and run your Google Cloud Vertex AI Studio App locally, execute the following command:
+### Frontend
+- React 18
+- TypeScript
+- TailwindCSS
+
+### DevOps
+- Docker
+- Render
+
+---
+
+## 🚀 Быстрый старт
+
+### 1. Клонирование репозитория
 
 ```bash
-npm install && npm run dev
+git clone https://github.com/Klimin0Andrey/TempDiplom.git
+cd TempDiplom
+```
+
+### 2. Настройка PostgreSQL
+
+```bash
+psql -U postgres
+```
+
+```sql
+CREATE USER platform_user WITH PASSWORD 'password';
+CREATE DATABASE platform_db OWNER platform_user;
+```
+
+```bash
+\q
+```
+
+### 3. Запуск backend
+
+```bash
+cd backend-python
+python -m venv venv
+```
+
+#### Windows
+```bash
+venv\Scripts\activate
+```
+
+#### Linux / Mac
+```bash
+source venv/bin/activate
+```
+
+```bash
+pip install -r requirements.txt
+cp .env.example .env
+```
+
+### 4. Запуск backend-сервера
+
+```bash
+uvicorn main:app --reload
+```
+
+Backend будет доступен по адресу:
+
+- [http://localhost:8000](http://localhost:8000)
+- [http://localhost:8000/docs](http://localhost:8000/docs)
+
+### 5. Запуск frontend
+
+```bash
+cd ../frontend
+npm install
+npm run dev
+```
+
+Frontend будет доступен по адресу:
+
+- [http://localhost:3000](http://localhost:3000)
+
+### 6. Запуск через Docker
+
+```bash
+docker-compose up -d
+```
+
+---
+
+## 📸 Скриншоты
+
+| Дашборд встреч | Управление командой |
+|:---:|:---:|
+| ![Дашборд](frontend/public/images/dashboard-meetings.png) | ![Команда](frontend/public/images/team-management.png) |
+
+| Аналитика | Центр поддержки |
+|:---:|:---:|
+| ![Аналитика](frontend/public/images/analytics-dashboard.png) | ![Поддержка](frontend/public/images/support-center.png) |
+
+| Настройки профиля |
+|:---:|
+| ![Профиль](frontend/public/images/profile-settings.png) |
+
+---
+
+## 🔄 Миграция и резервное копирование БД
+
+### Создание дампа
+
+```bash
+pg_dump --host=HOST --username=platform_user --dbname=platform_db --file=backup.dump
+```
+
+### Восстановление из дампа
+
+```bash
+pg_restore --host=localhost --dbname=platform_db backup.dump
+```
+
+---
+
+## 🧪 Тестирование
+
+```bash
+pytest
+npm test
+```
+
+---
+
+## 📊 API
+
+| Метод | Endpoint | Описание |
+|------|----------|---------|
+| POST | `/api/auth/register` | Регистрация пользователя |
+| POST | `/api/auth/login` | Вход в систему |
+| GET | `/api/rooms` | Получение списка комнат |
+| POST | `/api/rooms` | Создание комнаты |
+| GET | `/messages` | Получение сообщений чата |
+| POST | `/protocol` | Генерация AI-протокола |
+
+---
+
+## 🌐 Демо
+
+Онлайн-версия проекта:
+
+- [Potalkyem Demo](https://potalkyem.onrender.com)
+
+---
+
+## 👥 Команда
+
+- Иванов Иван
+- Климин Андрей
+
+---
+
+## 📞 Контакты
+
+- Email: [potalkyem412@gmail.com](mailto:potalkyem412@gmail.com)
+- GitHub: [Ваш репозиторий](https://github.com/Klimin0Andrey/TempDiplom)
+
+---
+
+## 📝 Лицензия
+
+Проект распространяется под лицензией **MIT**.
