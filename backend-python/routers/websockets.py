@@ -69,36 +69,6 @@ class ConnectionManager:
     async def get_participants(self, room_id: str) -> list:
         await self._ensure_redis()
         return await self.redis.hkeys(f"active_rooms:{room_id}")
-    
-    
-    # ========== НОВЫЙ МЕТОД ==========
-    async def send_to_user(self, user_id: str, message: dict):
-        """Отправить сообщение конкретному пользователю."""
-        # Проверяем глобальную комнату пользователя
-        global_room = f"user_{user_id}"
-        if global_room in self.ws_connections:
-            for uid, ws in self.ws_connections[global_room].items():
-                try:
-                    await ws.send_json(message)
-                    print(f"✅ Sent {message.get('type')} to user {user_id} via global room")
-                    return
-                except Exception as e:
-                    print(f"❌ Failed to send to user {user_id}: {e}")
-        
-        # Если нет в глобальной комнате, ищем в других комнатах
-        for room_id, users in self.ws_connections.items():
-            if room_id.startswith("user_"):  # Пропускаем глобальные комнаты
-                continue
-            if user_id in users:
-                try:
-                    await users[user_id].send_json(message)
-                    print(f"✅ Sent {message.get('type')} to user {user_id} in room {room_id}")
-                    return
-                except Exception as e:
-                    print(f"❌ Failed to send to user {user_id}: {e}")
-        
-        print(f"⚠️ User {user_id} not found in any room (offline)")
-    # ========== КОНЕЦ НОВОГО МЕТОДА ==========
 
 
 manager = ConnectionManager()
@@ -143,24 +113,22 @@ async def websocket_endpoint(
     # 3. Подключаем пользователя к комнате
     await manager.connect(websocket, room_id, user_id)
     
-    # 3.1. Записываем в БД (если ещё нет записи) - ТОЛЬКО ДЛЯ РЕАЛЬНЫХ КОМНАТ!
-    # Пропускаем запись для глобальных пользовательских комнат, начинающихся с "user_"
-    if not room_id.startswith("user_"):
-        async with AsyncSessionLocal() as db:
-            existing = await db.execute(
-                select(models.Participant).where(
-                    models.Participant.room_id == room_id,
-                    models.Participant.user_id == user_id,
-                )
+    # 3.1. Записываем в БД (если ещё нет записи)
+    async with AsyncSessionLocal() as db:
+        existing = await db.execute(
+            select(models.Participant).where(
+                models.Participant.room_id == room_id,
+                models.Participant.user_id == user_id,
             )
-            if not existing.scalars().first():
-                db.add(models.Participant(
-                    room_id=room_id,
-                    user_id=user_id,
-                    role_in_room="participant",
-                    joined_at=datetime.utcnow(),
-                ))
-                await db.commit()
+        )
+        if not existing.scalars().first():
+            db.add(models.Participant(
+                room_id=room_id,
+                user_id=user_id,
+                role_in_room="participant",
+                joined_at=datetime.utcnow(),
+            ))
+            await db.commit()
             
     # 3.2. Создаём задачи для heartbeat
     import asyncio as asyncio_module
@@ -189,22 +157,20 @@ async def websocket_endpoint(
     last_pong_ref = {"time": datetime.utcnow()}
 
     # ЛОГИКА ТАЙМЕРА: Если комната запланирована, переводим в статус ACTIVE
-    # Пропускаем для глобальных пользовательских комнат
-    if not room_id.startswith("user_"):
-        async with AsyncSessionLocal() as db:
-            room_res = await db.execute(select(models.Room).where(models.Room.id == room_id))
-            room = room_res.scalars().first()
-            
-            if room and room.status == models.RoomStatusEnum.scheduled:
-                room.status = models.RoomStatusEnum.active
-                room.started_at = datetime.utcnow()
-                await db.commit()
-                # Уведомляем всех в комнате, что встреча началась
-                await manager.broadcast(room_id, {
-                    "type": "system",
-                    "message": "Meeting has officially started",
-                    "started_at": room.started_at.isoformat() + "Z"
-                })
+    async with AsyncSessionLocal() as db:
+        room_res = await db.execute(select(models.Room).where(models.Room.id == room_id))
+        room = room_res.scalars().first()
+        
+        if room and room.status == models.RoomStatusEnum.scheduled:
+            room.status = models.RoomStatusEnum.active
+            room.started_at = datetime.utcnow()  # ← БЕЗ timezone
+            await db.commit()
+            # Уведомляем всех в комнате, что встреча началась
+            await manager.broadcast(room_id, {
+                "type": "system",
+                "message": "Meeting has officially started",
+                "started_at": room.started_at.isoformat() + "Z"
+            })
 
     # Уведомляем остальных, что зашел новый участник
     await manager.broadcast(
@@ -219,48 +185,46 @@ async def websocket_endpoint(
     )
 
     # 4. Отправляем историю чата ТОЛЬКО что подключившемуся участнику
-    # Пропускаем для глобальных пользовательских комнат
-    if not room_id.startswith("user_"):
-        async with AsyncSessionLocal() as db:
-            result = await db.execute(
-                select(models.ChatMessage, models.User.first_name, models.User.last_name)
-                .outerjoin(models.User, models.ChatMessage.user_id == models.User.id)
-                .where(models.ChatMessage.room_id == room_id)
-                .order_by(models.ChatMessage.created_at.desc())
-                .limit(50)
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(models.ChatMessage, models.User.first_name, models.User.last_name)
+            .outerjoin(models.User, models.ChatMessage.user_id == models.User.id)
+            .where(models.ChatMessage.room_id == room_id)
+            .order_by(models.ChatMessage.created_at.desc()) # Сортируем от новых к старым
+            .limit(50) # Берем последние 50
+        )
+        rows = result.all()
+
+        history =[]
+        # reversed возвращает список в хронологическом порядке (сверху вниз)
+        for msg, first_name, last_name in reversed(rows):
+            display_name = (
+                f"{first_name} {last_name or ''}".strip()
+                if first_name
+                else "Unknown User"
             )
-            rows = result.all()
+            
+            history.append({
+                "type": "chat",
+                "id": str(msg.id),
+                "user_id": str(msg.user_id) if msg.user_id else None,
+                "username": display_name,
+                "message": msg.message,
+                "message_type": "text",
+                "created_at": msg.created_at.isoformat() + "Z",
+                "reply_to_id": str(msg.reply_to_id) if msg.reply_to_id else None,
+            })
 
-            history =[]
-            for msg, first_name, last_name in reversed(rows):
-                display_name = (
-                    f"{first_name} {last_name or ''}".strip()
-                    if first_name
-                    else "Unknown User"
-                )
-                
-                history.append({
-                    "type": "chat",
-                    "id": str(msg.id),
-                    "user_id": str(msg.user_id) if msg.user_id else None,
-                    "username": display_name,
-                    "message": msg.message,
-                    "message_type": "text",
-                    "created_at": msg.created_at.isoformat() + "Z",
-                    "reply_to_id": str(msg.reply_to_id) if msg.reply_to_id else None,
+        if history:
+            try:
+                await websocket.send_json({
+                    "type": "chat_history",
+                    "messages": history,
                 })
-
-            if history:
-                try:
-                    await websocket.send_json({
-                        "type": "chat_history",
-                        "messages": history,
-                    })
-                except Exception:
-                    pass
+            except Exception:
+                pass
         
-    # 5. Отправляем ВСЕМ актуальный список участников (включая нового)
-    if not room_id.startswith("user_"):
+        # 5. Отправляем ВСЕМ актуальный список участников (включая нового)
         participants_list = await manager.get_participants(room_id)
         participants_info = []
         for pid in participants_list:
@@ -279,6 +243,7 @@ async def websocket_endpoint(
             })
         
         if participants_info:
+            # Отправляем ВСЕМ в комнате (не только новому)
             await manager.broadcast(room_id, {
                 "type": "participants_list",
                 "participants": participants_info,

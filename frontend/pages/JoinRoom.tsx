@@ -14,6 +14,7 @@ export default function JoinRoom() {
     const resolveInvite = async () => {
       const token = localStorage.getItem('accessToken');
       
+      // Нет токена → на логин
       if (!token) {
         const returnPath = `/join/${inviteCode}`;
         sessionStorage.setItem('redirectAfterLogin', returnPath);
@@ -37,6 +38,7 @@ export default function JoinRoom() {
       } catch (err: any) {
         console.error("Join error:", err);
         
+        // Если ошибка валидации (401) — токен протух, чистим и редиректим на логин
         if (err.status === 401) {
           localStorage.removeItem('accessToken');
           localStorage.removeItem('refreshToken');
