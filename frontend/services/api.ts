@@ -4,7 +4,7 @@ import {
   ProtocolsListResponse, ProtocolResponse, GenericResponse
 } from '../types.ts';
 
-const API_BASE_URL = '/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 class ApiError extends Error {
   constructor(public status: number, public data: any) {
