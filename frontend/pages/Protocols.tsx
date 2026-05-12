@@ -35,6 +35,182 @@ const translations = {
   noSummary: 'Нет доступного резюме'
 };
 
+// ===== МОКОВЫЕ ДАННЫЕ ДЛЯ ВИЗУАЛИЗАЦИИ =====
+const MOCK_PROTOCOLS: ProtocolShortResponse[] = [
+  {
+    id: 'prot_001',
+    room_id: 'room_alpha_01',
+    title: 'Стартовое совещание проекта Альфа',
+    created_at: '2026-05-10T10:30:00Z',
+    room_name: 'Комната запуска Альфа',
+    summary: 'Обсуждена архитектура платформы и распределение задач между модулями. Принято решение использовать PostgreSQL и WebSockets для сигнализации в реальном времени.',
+    pdf_url: '#'
+  },
+  {
+    id: 'prot_002',
+    room_id: 'room_analytics_02',
+    title: 'Обзор аналитической панели',
+    created_at: '2026-05-08T14:15:00Z',
+    room_name: 'Комната команды аналитики',
+    summary: 'Рассмотрены метрики новой аналитической панели. Ключевые решения включают внедрение обновления данных в реальном времени каждые 30 секунд и добавление функционала экспорта отчетов.',
+    pdf_url: '#'
+  },
+  {
+    id: 'prot_003',
+    room_id: 'room_cloud_03',
+    title: 'Планирование миграции в облако',
+    created_at: '2026-05-05T09:00:00Z',
+    room_name: 'Инфраструктурная комната',
+    summary: 'Стратегическое планирование миграции устаревших сервисов в облако. Установлен график поэтапной миграции с AWS в качестве основного провайдера.',
+    pdf_url: '#'
+  },
+  {
+    id: 'prot_004',
+    room_id: 'room_security_04',
+    title: 'Результаты аудита безопасности Q2 2026',
+    created_at: '2026-04-28T11:45:00Z',
+    room_name: 'Комната команды безопасности',
+    summary: 'Представлены результаты аудита безопасности за второй квартал. Выявлено 12 критических уязвимостей, создан план действий с графиком устранения на следующие 2 недели.',
+    pdf_url: '#'
+  },
+  {
+    id: 'prot_005',
+    room_id: 'room_product_05',
+    title: 'Планирование продуктового роудмапа - Q3 2026',
+    created_at: '2026-04-25T16:00:00Z',
+    room_name: 'Комната продуктовой стратегии',
+    summary: 'Стратегическая сессия по планированию продуктового роудмапа на третий квартал. Приоритетные функции: поиск на базе ИИ, улучшенные инструменты совместной работы и релиз мобильного приложения.',
+    pdf_url: '#'
+  }
+];
+
+const MOCK_FULL_PROTOCOLS: Record<string, ProtocolResponse> = {
+  'prot_001': {
+    id: 'prot_001',
+    room_id: 'room_alpha_01',
+    title: 'Стартовое совещание проекта Альфа',
+    created_at: '2026-05-10T10:30:00Z',
+    updated_at: '2026-05-10T10:30:00Z',
+    summary_json: {
+      summary: 'Обсуждена архитектура платформы и распределение задач между модулями. Принято решение использовать PostgreSQL и WebSockets для сигнализации в реальном времени.',
+      topics: ['Архитектура', 'Проектирование БД', 'WebRTC сигнализация', 'Распределение задач']
+    },
+    decisions_json: {
+      decisions: [
+        'Использовать PostgreSQL в качестве основной базы данных с поддержкой JSONB',
+        'Внедрить WebSocket сервер для сигнализации в реальном времени',
+        'Хранить протоколы встреч в формате JSONB для гибких запросов'
+      ]
+    },
+    action_items_json: {
+      action_items: [
+        { id: 'a1', task: 'Разработать ER-диаграмму', assignee: 'Алексей Петров', deadline: '2026-05-15', status: 'completed' },
+        { id: 'a2', task: 'Настроить WebSocket сервер', assignee: 'Дмитрий Иванов', deadline: '2026-05-18', status: 'in_progress' },
+        { id: 'a3', task: 'Создать схему базы данных', assignee: 'Мария Соколова', deadline: '2026-05-20', status: 'pending' }
+      ]
+    },
+    pdf_url: '#'
+  },
+  'prot_002': {
+    id: 'prot_002',
+    room_id: 'room_analytics_02',
+    title: 'Обзор аналитической панели',
+    created_at: '2026-05-08T14:15:00Z',
+    updated_at: '2026-05-08T14:15:00Z',
+    summary_json: {
+      summary: 'Рассмотрены метрики новой аналитической панели.',
+      topics: ['Метрики панели', 'Обновления в реальном времени', 'Экспорт данных']
+    },
+    decisions_json: {
+      decisions: [
+        'Внедрить обновление данных в реальном времени через WebSocket каждые 30 секунд',
+        'Добавить форматы экспорта CSV, Excel и PDF для отчетов'
+      ]
+    },
+    action_items_json: {
+      action_items: [
+        { id: 'b1', task: 'Реализовать WebSocket соединение', assignee: 'Елена Козлова', deadline: '2026-05-14', status: 'completed' },
+        { id: 'b2', task: 'Добавить функционал экспорта', assignee: 'Павел Морозов', deadline: '2026-05-16', status: 'in_progress' }
+      ]
+    },
+    pdf_url: '#'
+  },
+  'prot_003': {
+    id: 'prot_003',
+    room_id: 'room_cloud_03',
+    title: 'Планирование миграции в облако',
+    created_at: '2026-05-05T09:00:00Z',
+    updated_at: '2026-05-05T09:00:00Z',
+    summary_json: {
+      summary: 'Стратегическое планирование миграции устаревших сервисов в облако.',
+      topics: ['Облачные провайдеры', 'Стратегия миграции', 'Анализ затрат']
+    },
+    decisions_json: {
+      decisions: [
+        'Выбрать AWS в качестве основного облачного провайдера',
+        'Принять поэтапный подход к миграции в течение 6 месяцев'
+      ]
+    },
+    action_items_json: {
+      action_items: [
+        { id: 'c1', task: 'Провести оценку облачных провайдеров', assignee: 'Максим Лебедев', deadline: '2026-05-10', status: 'completed' },
+        { id: 'c2', task: 'Создать график миграции', assignee: 'Ольга Новикова', deadline: '2026-05-15', status: 'in_progress' }
+      ]
+    },
+    pdf_url: '#'
+  },
+  'prot_004': {
+    id: 'prot_004',
+    room_id: 'room_security_04',
+    title: 'Результаты аудита безопасности Q2 2026',
+    created_at: '2026-04-28T11:45:00Z',
+    updated_at: '2026-04-28T11:45:00Z',
+    summary_json: {
+      summary: 'Представлены результаты аудита безопасности за второй квартал.',
+      topics: ['Оценка уязвимостей', 'Тестирование на проникновение', 'Анализ рисков']
+    },
+    decisions_json: {
+      decisions: [
+        'Внедрить экстренные исправления для критических уязвимостей',
+        'Развернуть межсетевой экран веб-приложений (WAF)'
+      ]
+    },
+    action_items_json: {
+      action_items: [
+        { id: 'd1', task: 'Устранить критические уязвимости', assignee: 'Команда безопасности', deadline: '2026-05-05', status: 'completed' },
+        { id: 'd2', task: 'Развернуть WAF в продакшене', assignee: 'DevOps команда', deadline: '2026-05-10', status: 'in_progress' }
+      ]
+    },
+    pdf_url: '#'
+  },
+  'prot_005': {
+    id: 'prot_005',
+    room_id: 'room_product_05',
+    title: 'Планирование продуктового роудмапа - Q3 2026',
+    created_at: '2026-04-25T16:00:00Z',
+    updated_at: '2026-04-25T16:00:00Z',
+    summary_json: {
+      summary: 'Стратегическая сессия по планированию продуктового роудмапа на третий квартал.',
+      topics: ['Приоритезация функций', 'Распределение ресурсов', 'Анализ рынка']
+    },
+    decisions_json: {
+      decisions: [
+        'Приоритезировать функцию поиска на базе ИИ для запуска в Q3',
+        'Выделить дополнительные ресурсы на разработку мобильного приложения'
+      ]
+    },
+    action_items_json: {
+      action_items: [
+        { id: 'e1', task: 'Создать PRD для функции ИИ-поиска', assignee: 'Продуктовая команда', deadline: '2026-05-05', status: 'completed' },
+        { id: 'e2', task: 'Нанять двух мобильных разработчиков', assignee: 'HR команда', deadline: '2026-05-20', status: 'in_progress' }
+      ]
+    },
+    pdf_url: '#'
+  }
+};
+
+
+
 export default function Protocols() {
   const [search, setSearch] = useState('');
   const [protocols, setProtocols] = useState<ProtocolShortResponse[]>([]);
@@ -47,38 +223,81 @@ export default function Protocols() {
   const [fullProtocol, setFullProtocol] = useState<ProtocolResponse | null>(null);
   const [isViewerLoading, setIsViewerLoading] = useState(false);
 
+  const downloadProtocolPDF = async (protocolId: string, title: string) => {
+  try {
+    // Используем state protocols, который доступен внутри компонента
+    const protocol = protocols.find(p => p.id === protocolId);
+    if (protocol?.pdf_url && protocol.pdf_url !== '#') {
+      window.open(protocol.pdf_url, '_blank');
+      return;
+    }
+    
+    alert('Функция скачивания PDF будет доступна в ближайшее время');
+  } catch (error) {
+    console.error('Error downloading PDF:', error);
+    alert('Не удалось скачать PDF');
+  }
+};
+
   useEffect(() => {
     fetchProtocols();
   }, []);
 
   const fetchProtocols = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      const response = await api.protocols.list();
-      setProtocols(response.protocols || []);
-    } catch (err: any) {
-      console.error("Failed to fetch protocols:", err);
-      setError(translations.error);
-    } finally {
-      setIsLoading(false);
+  try {
+    setIsLoading(true);
+    setError(null);
+    const response = await api.protocols.list();
+    
+    // Если есть реальные протоколы - показываем их, иначе мок-данные
+    if (response.protocols && response.protocols.length > 0) {
+      setProtocols(response.protocols);
+    } else {
+      console.log("Нет протоколов, показываем демо-данные");
+      setProtocols(MOCK_PROTOCOLS);
     }
-  };
+  } catch (err: any) {
+    console.error("Failed to fetch protocols:", err);
+    // При ошибке API тоже показываем мок-данные
+    setProtocols(MOCK_PROTOCOLS);
+    // Не показываем ошибку, так как используем демо-данные
+    if (err.status !== 404) {
+      setError(translations.error);
+    }
+  } finally {
+    setIsLoading(false);
+  }
+};
 
-  const handleViewProtocol = async (id: string) => {
-    setSelectedProtocolId(id);
-    setIsViewerLoading(true);
-    try {
-      const data = await api.protocols.getById(id);
-      setFullProtocol(data);
-    } catch (err) {
-      console.error("Failed to fetch full protocol:", err);
+ const handleViewProtocol = async (id: string) => {
+  setSelectedProtocolId(id);
+  setIsViewerLoading(true);
+  try {
+    let data: ProtocolResponse | null = null;
+    
+    // Проверяем, есть ли мок-данные для этого ID
+    if (MOCK_FULL_PROTOCOLS[id]) {
+      // Имитируем задержку сети для реалистичности
+      await new Promise(resolve => setTimeout(resolve, 500));
+      data = MOCK_FULL_PROTOCOLS[id];
+    } else {
+      data = await api.protocols.getById(id);
+    }
+    
+    setFullProtocol(data);
+  } catch (err) {
+    console.error("Failed to fetch full protocol:", err);
+    // Пробуем показать мок-данные при ошибке
+    if (MOCK_FULL_PROTOCOLS[id]) {
+      setFullProtocol(MOCK_FULL_PROTOCOLS[id]);
+    } else {
       alert("Не удалось загрузить детали протокола");
       setSelectedProtocolId(null);
-    } finally {
-      setIsViewerLoading(false);
     }
-  };
+  } finally {
+    setIsViewerLoading(false);
+  }
+};
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {

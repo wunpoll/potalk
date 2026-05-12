@@ -7,7 +7,8 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
 
-# --- Enums ---
+# МОДЕЛИ БАЗЫ ДАННЫХ ПЛАТФОРМЫ
+# Определение перечислений для ролей, статусов и состояний комнат
 class RoleEnum(str, enum.Enum):
     owner = 'owner'
     admin = 'admin'
@@ -29,7 +30,7 @@ class RoomStatusEnum(str, enum.Enum):
     ended = 'ended'
     archived = 'archived'
 
-# --- Models ---
+# ОСНОВНЫЕ СУЩНОСТИ
 class Tier(Base):
     __tablename__ = 'tiers'
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -87,6 +88,7 @@ class TeamMember(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     role_in_team = Column(String(20), default='member', nullable=False)
 
+# КОНФЕРЕНЦИИ И УЧАСТНИКИ
 class Room(Base):
     __tablename__ = 'rooms'
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -157,6 +159,7 @@ class Recording(Base):
     is_processed = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=func.now(), nullable=False)
 
+# ИИ-ПРОТОКОЛИРОВАНИЕ
 class Protocol(Base):
     __tablename__ = 'protocols'
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

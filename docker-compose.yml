@@ -1,0 +1,97 @@
+version: '3.8'
+
+services:
+  # PostgreSQL база данных
+  postgres:
+    image: postgres:15-alpine
+    container_name: platform-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: platform_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - platform_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis для кэша и presence
+  redis:
+    image: redis:7-alpine
+    container_name: platform-redis
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - platform_network
+    restart: unless-stopped
+
+  # Бэкенд (FastAPI + WebSocket)
+  backend:
+    build: ./backend-python
+    container_name: platform-backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/platform_db
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-super-secret-key-change-me}
+      JWT_ALGORITHM: HS256
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES: 60
+      JWT_REFRESH_TOKEN_EXPIRE_DAYS: 7
+      MAIL_USERNAME: ${MAIL_USERNAME}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
+      MAIL_FROM: ${MAIL_FROM}
+      MAIL_PORT: 587
+      MAIL_SERVER: smtp.gmail.com
+      MAIL_FROM_NAME: Potalkyem
+      FRONTEND_URL: http://localhost
+      SUPPORT_EMAIL: ${SUPPORT_EMAIL:-potalkyem412@gmail.com}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./backend-python:/app
+      - backend_logs:/app/logs
+    networks:
+      - platform_network
+    restart: unless-stopped
+
+  # Фронтенд (React + Nginx)
+  # frontend:
+  #   build: ./frontend
+  #   container_name: platform-frontend
+  #   ports:
+  #     - "80:80"
+  #   depends_on:
+  #     - backend
+  #   networks:
+  #     - platform_network
+  #   restart: unless-stopped
+
+# Сети
+networks:
+  platform_network:
+    driver: bridge
+    name: platform_network
+
+# Тома для персистентных данных
+volumes:
+  postgres_data:
+    name: platform_postgres_data
+  redis_data:
+    name: platform_redis_data
+  backend_logs:
+    name: platform_backend_logs

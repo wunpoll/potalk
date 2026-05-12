@@ -129,6 +129,7 @@ export const api = {
     }),
     getById: (id: string) => fetchApi<ProtocolResponse>(`/protocols/${id}`, { method: 'GET' }),
     delete: (id: string) => fetchApi<void>(`/protocols/${id}`, { method: 'DELETE' }),
+    
   },
   
   support: {
@@ -141,4 +142,6 @@ export const api = {
   analytics: {
     getDashboard: () => fetchApi<any>('/analytics/dashboard', { method: 'GET' }),
   },
+
+  
 };
