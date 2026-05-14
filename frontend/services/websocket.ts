@@ -11,15 +11,10 @@ export class SignalingClient {
   private stateListeners: Set<(state: ConnectionState) => void> = new Set();
 
   constructor() {
-    // В проде ВСЕГДА обращаемся напрямую к бэкенду, минуя Nginx фронтенда
     const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    
-    if (isLocal) {
-      this.url = 'ws://localhost:8000';
-    } else {
-      // Прямой адрес вашего бэкенда на Render
-      this.url = 'wss://potalk-backend.onrender.com';
-    }
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = isLocal ? 'localhost:8000' : window.location.host;
+    this.url = `${protocol}//${host}`;
   }
 
   private setState(newState: ConnectionState) {
