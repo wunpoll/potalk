@@ -15,12 +15,13 @@ RATE = 16000
 PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT", "theta-shuttle-492107-a1")
 REGION = "eu"
 
-# Инициализация клиента Gemini
-ai_client = genai.Client(
-    vertexai=True,
-    project=PROJECT_ID,
-    location="global"
-)
+def get_ai_client():
+    """Ленивая инициализация клиента Gemini."""
+    return genai.Client(
+        vertexai=True,
+        project=PROJECT_ID,
+        location="global"
+    )
 
 class STTManager:
     """Управляет стримингом аудио в Google STT V2 для одного пользователя."""
@@ -31,9 +32,7 @@ class STTManager:
         self.user_name = user_name
         self.send_subtitle = send_subtitle_func
         
-        self.client = SpeechAsyncClient(client_options={
-            "api_endpoint": f"{REGION}-speech.googleapis.com"
-        })
+        self.client = None # Инициализируем в start()
         
         self._audio_queue = asyncio.Queue()
         self._is_running = False
@@ -89,6 +88,12 @@ class STTManager:
         self._is_running = True
         logger.info(f"Starting STT for user {self.user_name} in room {self.room_id}")
         
+        # Инициализируем клиент только при старте
+        if self.client is None:
+            self.client = SpeechAsyncClient(client_options={
+                "api_endpoint": f"{REGION}-speech.googleapis.com"
+            })
+            
         try:
             # Google Cloud Python SDK v2 асинхронный стриминг ожидает асинхронный генератор
             responses = await self.client.streaming_recognize(requests=self._request_generator())
@@ -154,6 +159,7 @@ async def generate_meeting_protocol(room_id: str, full_transcript: str):
     """
 
     try:
+        ai_client = get_ai_client()
         response = ai_client.models.generate_content(
             model='gemini-2.0-flash-exp', # Используем актуальную модель
             contents=prompt,

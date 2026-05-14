@@ -9,6 +9,7 @@ export class SignalingClient {
   private url: string;
   private state: ConnectionState = 'disconnected';
   private stateListeners: Set<(state: ConnectionState) => void> = new Set();
+  private intentionalDisconnect = false;
 
   constructor() {
     const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -68,9 +69,10 @@ export class SignalingClient {
       this.ws.onclose = (event) => {
         console.log('WebSocket disconnected', event.reason);
         this.setState('disconnected');
-        if (!event.wasClean) {
+        if (!event.wasClean && !this.intentionalDisconnect) {
           this.handleReconnect(roomId, token);
         }
+        this.intentionalDisconnect = false;
       };
 
       this.ws.onerror = (error) => {
@@ -94,6 +96,7 @@ export class SignalingClient {
 
   disconnect() {
     if (this.ws) {
+      this.intentionalDisconnect = true;
       this.ws.close();
       this.ws = null;
     }
@@ -144,4 +147,4 @@ export class SignalingClient {
   }
 }
 
-export const wsClient = new SignalingClient('ws://localhost:8000');
+export const wsClient = new SignalingClient();

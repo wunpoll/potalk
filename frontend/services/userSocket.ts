@@ -1,6 +1,13 @@
-import { wsClient } from './websocket.ts';
+import { SignalingClient } from './websocket.ts';
 
+const userWsClient = new SignalingClient();
 let isConnected = false;
+
+userWsClient.onStateChange((state) => {
+    if (state === 'disconnected' || state === 'error') {
+        isConnected = false;
+    }
+});
 
 export const initUserSocket = () => {
     const token = localStorage.getItem('accessToken');
@@ -10,10 +17,10 @@ export const initUserSocket = () => {
     const userId = JSON.parse(localStorage.getItem('user') || '{}').id;
     if (!userId) return;
     
-    wsClient.connect(`user_${userId}`, token);
+    userWsClient.connect(`user_${userId}`, token);
     isConnected = true;
     
     console.log('🔌 User global WebSocket initialized');
 };
 
-export const getUserSocket = () => wsClient;
+export const getUserSocket = () => userWsClient;
