@@ -102,6 +102,12 @@ export class SignalingClient {
     }
   }
 
+  sendBinary(data: Blob | ArrayBuffer) {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(data);
+    }
+  }
+
   on(type: string, handler: WSMessageHandler) {
     if (!this.handlers.has(type)) {
       this.handlers.set(type, new Set());

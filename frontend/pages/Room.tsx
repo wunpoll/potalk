@@ -149,6 +149,9 @@ export default function Room() {
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
   const [isProtocolViewerOpen, setIsProtocolViewerOpen] = useState(false);
   
+  // LIVE SUBTITLES STATE
+  const [liveSubtitles, setLiveSubtitles] = useState<Record<string, { username: string, text: string, isFinal: boolean }>>({});
+  
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [room, setRoom] = useState<RoomResponse | null>(null);
 
@@ -158,6 +161,53 @@ export default function Room() {
   const localAudioRef = useRef<HTMLAudioElement | null>(null);
   const [audioConnected, setAudioConnected] = useState(false);
   // ====== End WebRTC Audio State ======
+
+  // ====== AUDIO CAPTURE FOR STT ======
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
+
+  const startAudioCapture = async (stream: MediaStream) => {
+    try {
+      const audioContext = new AudioContext({ sampleRate: 16000 });
+      audioContextRef.current = audioContext;
+      
+      const source = audioContext.createMediaStreamSource(stream);
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      processorRef.current = processor;
+
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+
+      processor.onaudioprocess = (e) => {
+        if (isMuted) return;
+        
+        const inputData = e.inputBuffer.getChannelData(0);
+        // Конвертируем Float32 в Int16 PCM (как ожидает Google STT)
+        const pcmData = new Int16Array(inputData.length);
+        for (let i = 0; i < inputData.length; i++) {
+          pcmData[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
+        }
+        
+        // Отправляем чанк через WebSocket
+        wsClient.sendBinary(pcmData.buffer);
+      };
+    } catch (err) {
+      console.error('Failed to start audio capture for STT:', err);
+    }
+  };
+
+  const stopAudioCapture = () => {
+    if (processorRef.current) {
+      processorRef.current.disconnect();
+      processorRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+  };
+  // ====== END AUDIO CAPTURE ======
+
   const [elapsedTime, setElapsedTime] = useState('00:00:00');
   const userStr = localStorage.getItem('user');
   const currentUser = userStr ? JSON.parse(userStr) : null;
@@ -206,6 +256,9 @@ const startAudio = async () => {
       } 
     });
     
+    // Запускаем захват для STT
+    startAudioCapture(stream);
+
     // Создаём скрытый audio-элемент для локального мониторинга
     localAudioRef.current = new Audio();
     localAudioRef.current.srcObject = stream;
@@ -443,6 +496,9 @@ const handleWebRTCSignal = async (data: any) => {
 };
 
 const stopAudio = () => {
+  // Останавливаем захват STT
+  stopAudioCapture();
+
   // Останавливаем локальный стрим
   if (localAudioRef.current?.srcObject) {
     const stream = localAudioRef.current.srcObject as MediaStream;
@@ -821,6 +877,8 @@ useEffect(() => {
       wsClient.off('presence', handlePresence);
       wsClient.off('protocol_ready', handleProtocolReady);
       wsClient.off('participants_list', handleParticipantsList);
+      wsClient.off('subtitle', handleSubtitle);
+      wsClient.off('meeting_ended', handleMeetingEnded);
       wsClient.disconnect();
       wsClient.off('offer', handleWebRTCSignal);
       wsClient.off('answer', handleWebRTCSignal);
@@ -1133,6 +1191,19 @@ useEffect(() => {
                   </div>
                   <p className="text-sm text-blue-400 font-medium">{ru.media.listening}</p>
                 </div>
+              </div>
+
+              {/* LIVE SUBTITLES OVERLAY */}
+              <div className="absolute bottom-10 left-0 right-0 flex flex-col items-center pointer-events-none space-y-2 px-6">
+                {Object.entries(liveSubtitles).map(([uid, sub]) => (
+                  <div key={uid} className="bg-black/60 backdrop-blur-md px-4 py-2 rounded-xl border border-white/10 animate-fade-in max-w-lg">
+                    <p className="text-[10px] text-blue-400 font-bold uppercase tracking-wider mb-0.5">{sub.username}</p>
+                    <p className={`text-sm ${sub.isFinal ? 'text-white' : 'text-gray-300'}`}>
+                      {sub.text}
+                      {!sub.isFinal && <span className="inline-block w-1.5 h-3 ml-1 bg-blue-500 animate-pulse"></span>}
+                    </p>
+                  </div>
+                ))}
               </div>
             </>
           )}

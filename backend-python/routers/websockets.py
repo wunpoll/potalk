@@ -9,6 +9,7 @@ import security
 import models
 import logging
 from database import AsyncSessionLocal
+from services.stt_service import STTManager, generate_meeting_protocol
 
 router = APIRouter(tags=["WebSockets"])
 
@@ -23,6 +24,10 @@ class ConnectionManager:
         self.redis: redis.Redis | None = None
         # Локальный словарь для WebSocket-объектов (их нельзя хранить в Redis)
         self.ws_connections: Dict[str, Dict[str, WebSocket]] = {}
+        # Храним транскрипты для всей комнаты (пока она активна)
+        self.room_transcripts: Dict[str, List[str]] = {}
+        # Храним STT менеджеры для активных стримов
+        self.stt_managers: Dict[str, Dict[str, STTManager]] = {}
 
     async def _ensure_redis(self):
         if self.redis is None:
@@ -36,6 +41,9 @@ class ConnectionManager:
         if room_id not in self.ws_connections:
             self.ws_connections[room_id] = {}
         self.ws_connections[room_id][user_id] = websocket
+
+        if room_id not in self.room_transcripts:
+            self.room_transcripts[room_id] = []
         
         # Храним presence в Redis
         await self.redis.hset(f"active_rooms:{room_id}", user_id, "online")
@@ -46,6 +54,12 @@ class ConnectionManager:
             self.ws_connections[room_id].pop(user_id, None)
             if not self.ws_connections[room_id]:
                 del self.ws_connections[room_id]
+        
+        # Останавливаем STT если был активен
+        if room_id in self.stt_managers and user_id in self.stt_managers[room_id]:
+            import asyncio
+            mgr = self.stt_managers[room_id].pop(user_id)
+            asyncio.create_task(mgr.stop())
         
         # Удаляем из Redis (асинхронно, без await)
         if self.redis:
@@ -250,12 +264,35 @@ async def websocket_endpoint(
             })
         
         
+    # Функция для отправки субтитров всем участникам
+    async def send_subtitle_to_room(subtitle_data: dict):
+        await manager.broadcast(room_id, subtitle_data)
+        if subtitle_data.get("is_final"):
+            manager.room_transcripts[room_id].append(
+                f"{subtitle_data['user_name']}: {subtitle_data['text']}"
+            )
+
+    # Инициализируем STT менеджер для этого пользователя
+    stt_manager = STTManager(room_id, user_id, username, send_subtitle_to_room)
+    if room_id not in manager.stt_managers:
+        manager.stt_managers[room_id] = {}
+    manager.stt_managers[room_id][user_id] = stt_manager
+    stt_task = asyncio_module.create_task(stt_manager.start())
+
     try:
         while True:
-            # Ожидаем сообщения от клиента
-            data = await websocket.receive_text()
-            message_data = json.loads(data)
-            msg_type = message_data.get("type")
+            # Ожидаем сообщения (текст или байты)
+            received = await websocket.receive()
+            
+            if "text" in received:
+                message_data = json.loads(received["text"])
+                msg_type = message_data.get("type")
+            elif "bytes" in received:
+                # Это аудио-чанк от микрофона участника
+                await stt_manager.add_audio(received["bytes"])
+                continue
+            else:
+                continue
             
             if msg_type == "pong":
                 last_pong_ref["time"] = datetime.utcnow()
@@ -380,6 +417,46 @@ async def websocket_endpoint(
                         # Здесь можно добавить буферизацию в Redis
                 else:
                     print(f"⚠️ Invalid target or room_id: {target}, {room_id}")
+
+            elif msg_type == "end_meeting":
+                # Только создатель или админ должен иметь право завершать
+                full_transcript = "\n".join(manager.room_transcripts.get(room_id, []))
+                
+                if full_transcript:
+                    # Генерируем протокол через Gemini
+                    protocol_data = await generate_meeting_protocol(room_id, full_transcript)
+                    
+                    if protocol_data:
+                        # Сохраняем в БД
+                        async with AsyncSessionLocal() as db:
+                            # Обновляем статус комнаты
+                            room_res = await db.execute(select(models.Room).where(models.Room.id == room_id))
+                            room = room_res.scalars().first()
+                            if room:
+                                room.status = models.RoomStatusEnum.ended
+                                room.ended_at = datetime.utcnow()
+                                
+                            new_protocol = models.Protocol(
+                                room_id=room_id,
+                                created_by=user_id,
+                                title=f"Protocol: {room.name if room else 'Meeting'}",
+                                summary_json=protocol_data,
+                                content_json={"transcript": full_transcript},
+                                topics_json={"topics": protocol_data.get("topic")},
+                                decisions_json={"decisions": protocol_data.get("decisions")},
+                                action_items_json={"action_items": protocol_data.get("tasks")}
+                            )
+                            db.add(new_protocol)
+                            await db.commit()
+                            
+                            # Уведомляем всех
+                            await manager.broadcast(room_id, {
+                                "type": "meeting_ended",
+                                "protocol_id": str(new_protocol.id),
+                                "summary": protocol_data
+                            })
+                else:
+                    await manager.broadcast(room_id, {"type": "meeting_ended", "message": "No audio recorded"})
 
     except WebSocketDisconnect:
         ping_task.cancel()

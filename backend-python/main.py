@@ -26,8 +26,8 @@ app = FastAPI(
 )
 
 origins = [
-    "http://localhost:5173", # Для локальной разработки
-    "https://potalk.onrender.com", # ЗАМЕНИ НА СВОЙ РЕАЛЬНЫЙ URL ФРОНТЕНДА!
+    "http://localhost:5173",
+    "https://potalk.onrender.com",
 ]
 
 app.add_middleware(
