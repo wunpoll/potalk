@@ -36,26 +36,36 @@ class ConnectionManager:
 
     async def connect(self, websocket: WebSocket, room_id: str, user_id: str):
         await websocket.accept()
-        await self._ensure_redis()
+        
+        is_user_channel = room_id.startswith("user_")
+        
+        if not is_user_channel:
+            await self._ensure_redis()
         
         # Храним WebSocket локально (нельзя сериализовать в Redis)
         if room_id not in self.ws_connections:
             self.ws_connections[room_id] = {}
         self.ws_connections[room_id][user_id] = websocket
 
-        if room_id not in self.room_transcripts:
-            self.room_transcripts[room_id] = []
-        
-        # Храним presence в Redis
-        await self.redis.hset(f"active_rooms:{room_id}", user_id, "online")
+        if not is_user_channel:
+            if room_id not in self.room_transcripts:
+                self.room_transcripts[room_id] = []
+            
+            # Храним presence в Redis
+            await self.redis.hset(f"active_rooms:{room_id}", user_id, "online")
 
     def disconnect(self, room_id: str, user_id: str):
+        is_user_channel = room_id.startswith("user_")
+        
         # Удаляем локальный WebSocket
         if room_id in self.ws_connections:
             self.ws_connections[room_id].pop(user_id, None)
             if not self.ws_connections[room_id]:
                 del self.ws_connections[room_id]
         
+        if is_user_channel:
+            return
+            
         # Останавливаем STT если был активен
         if room_id in self.stt_managers and user_id in self.stt_managers[room_id]:
             import asyncio
