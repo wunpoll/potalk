@@ -99,16 +99,19 @@ async def websocket_endpoint(
     # 1. Валидация JWT токена
     payload = security.decode_token(token)
     if payload is None:
+        logging.warning(f"WebSocket auth failed: Invalid token for room {room_id}")
         await websocket.close(code=1008, reason="Invalid token")
         return
 
     # Защита: разрешаем вход только по access-токену
     if payload.get("type") != "access":
+        logging.warning(f"WebSocket auth failed: Invalid token type {payload.get('type')}")
         await websocket.close(code=1008, reason="Invalid token type")
         return
 
     user_id = payload.get("sub")
     if not user_id:
+        logging.warning(f"WebSocket auth failed: No user_id in token")
         await websocket.close(code=1008, reason="No user_id in token")
         return
 
@@ -463,7 +466,8 @@ async def websocket_endpoint(
                 else:
                     await manager.broadcast(room_id, {"type": "meeting_ended", "message": "No audio recorded"})
 
-    except WebSocketDisconnect:
+    except WebSocketDisconnect as e:
+        logging.info(f"WebSocket disconnected for user {user_id} in room {room_id} with code {e.code}")
         ping_task.cancel()
         manager.disconnect(room_id, user_id)
         await manager.broadcast(
@@ -475,6 +479,7 @@ async def websocket_endpoint(
             },
         )
     except Exception as e:
+        logging.error(f"WebSocket error for user {user_id} in room {room_id}: {e}")
         ping_task.cancel()
         print(f"WebSocket error for user {user_id} in room {room_id}: {e}")
         manager.disconnect(room_id, user_id)

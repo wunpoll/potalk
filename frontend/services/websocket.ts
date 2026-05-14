@@ -40,7 +40,9 @@ export class SignalingClient {
     this.setState('connecting');
 
     try {
-      this.ws = new WebSocket(`${this.url}/ws/${roomId}?token=${token}`);
+      const wsUrl = `${this.url}/ws/${roomId}?token=${token}`;
+      console.log('Connecting to WebSocket:', wsUrl.replace(token, 'HIDDEN_TOKEN'));
+      this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
         console.log('WebSocket connected');
