@@ -264,6 +264,11 @@ async def websocket_endpoint(
             })
         
         
+    # В V2 используем региональный эндпоинт.
+    # Мы используем стандартный распознаватель "_", который всегда доступен.
+    # PROJECT_ID и REGION берем из настроек или переменных окружения
+    from services.stt_service import PROJECT_ID, REGION
+
     # Функция для отправки субтитров всем участникам
     async def send_subtitle_to_room(subtitle_data: dict):
         await manager.broadcast(room_id, subtitle_data)

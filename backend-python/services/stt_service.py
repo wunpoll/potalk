@@ -90,12 +90,12 @@ class STTManager:
         logger.info(f"Starting STT for user {self.user_name} in room {self.room_id}")
         
         try:
-            requests = self._request_generator()
-            # Важно: streaming_recognize ожидает итератор. В асинхронном клиенте это может быть по-другому.
-            # Google Cloud Python SDK v2 асинхронный стриминг работает через асинхронные генераторы.
-            responses = await self.client.streaming_recognize(requests=requests)
+            # Google Cloud Python SDK v2 асинхронный стриминг ожидает асинхронный генератор
+            responses = await self.client.streaming_recognize(requests=self._request_generator())
 
             async for response in responses:
+                if not self._is_running:
+                    break
                 if not response.results:
                     continue
 
@@ -106,7 +106,7 @@ class STTManager:
                 transcript = result.alternatives[0].transcript
                 is_final = result.is_final
 
-                # Отправляем субтитры обратно через колбэк (который отправит в WebSocket)
+                # Отправляем субтитры
                 await self.send_subtitle({
                     "type": "subtitle",
                     "user_id": self.user_id,
@@ -119,7 +119,8 @@ class STTManager:
                     self._transcript_list.append(f"{self.user_name}: {transcript}")
 
         except Exception as e:
-            logger.error(f"STT Error for {self.user_id}: {e}")
+            if self._is_running: # Игнорируем ошибки при штатной остановке
+                logger.error(f"STT Error for {self.user_id}: {e}")
         finally:
             self._is_running = False
 
