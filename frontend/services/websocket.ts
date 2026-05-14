@@ -43,6 +43,7 @@ export class SignalingClient {
     this.setState('connecting');
 
     try {
+      // ИСПОЛЬЗУЕМ roomId ИЗ ПАРАМЕТРОВ ФУНКЦИИ, А НЕ user_id
       const wsUrl = `${this.url}/ws/${roomId}?token=${token}`;
       console.log('Connecting to WebSocket:', wsUrl.replace(token, 'HIDDEN_TOKEN'));
       this.ws = new WebSocket(wsUrl);

@@ -8,6 +8,7 @@ from sqlalchemy import select
 import security
 import models
 import logging
+import asyncio
 from database import AsyncSessionLocal
 from services.stt_service import STTManager, generate_meeting_protocol
 
@@ -148,12 +149,11 @@ async def websocket_endpoint(
             await db.commit()
             
     # 3.2. Создаём задачи для heartbeat
-    import asyncio as asyncio_module
     
     async def send_ping():
         """Отправляем ping каждые 15 секунд."""
         while True:
-            await asyncio_module.sleep(15)
+            await asyncio.sleep(15)
             try:
                 await websocket.send_json({"type": "ping"})
             except Exception:
@@ -162,7 +162,7 @@ async def websocket_endpoint(
     async def wait_pong():
         """Ждём pong или дисконнектим через 30 секунд."""
         while True:
-            await asyncio_module.sleep(30)
+            await asyncio.sleep(30)
             # Если за 30 секунд не получили pong — дисконнект
             try:
                 await websocket.close(code=1002, reason="Ping timeout")
@@ -170,7 +170,7 @@ async def websocket_endpoint(
             except Exception:
                 break
 
-    ping_task = asyncio_module.create_task(send_ping())
+    ping_task = asyncio.create_task(send_ping())
     last_pong_ref = {"time": datetime.utcnow()}
 
     # ЛОГИКА ТАЙМЕРА: Если комната запланирована, переводим в статус ACTIVE
@@ -281,11 +281,17 @@ async def websocket_endpoint(
             )
 
     # Инициализируем STT менеджер для этого пользователя
-    stt_manager = STTManager(room_id, user_id, username, send_subtitle_to_room)
-    if room_id not in manager.stt_managers:
-        manager.stt_managers[room_id] = {}
-    manager.stt_managers[room_id][user_id] = stt_manager
-    stt_task = asyncio_module.create_task(stt_manager.start())
+    try:
+        stt_manager = STTManager(room_id, user_id, username, send_subtitle_to_room)
+        if room_id not in manager.stt_managers:
+            manager.stt_managers[room_id] = {}
+        manager.stt_managers[room_id][user_id] = stt_manager
+        stt_task = asyncio.create_task(stt_manager.start())
+    except Exception as e:
+        import traceback
+        logging.error(f"Failed to initialize STT for user {user_id}: {e}")
+        logging.error(traceback.format_exc())
+        stt_manager = None
 
     try:
         while True:
@@ -297,7 +303,8 @@ async def websocket_endpoint(
                 msg_type = message_data.get("type")
             elif "bytes" in received:
                 # Это аудио-чанк от микрофона участника
-                await stt_manager.add_audio(received["bytes"])
+                if stt_manager:
+                    await stt_manager.add_audio(received["bytes"])
                 continue
             else:
                 continue
@@ -479,7 +486,8 @@ async def websocket_endpoint(
             },
         )
     except Exception as e:
-        logging.error(f"WebSocket error for user {user_id} in room {room_id}: {e}")
+        import traceback
+        logging.error(f"CRITICAL WebSocket error for user {user_id} in room {room_id}: {e}")
+        logging.error(traceback.format_exc())
         ping_task.cancel()
-        print(f"WebSocket error for user {user_id} in room {room_id}: {e}")
         manager.disconnect(room_id, user_id)
