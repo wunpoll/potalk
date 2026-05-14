@@ -286,29 +286,29 @@ async def websocket_endpoint(
                     "participants": participants_info,
                 })
 
-        # Функция для отправки субтитров всем участникам
-        async def send_subtitle_to_room(subtitle_data: dict):
-            if not is_user_channel:
-                await manager.broadcast(room_id, subtitle_data)
-                if subtitle_data.get("is_final") and room_id in manager.room_transcripts:
-                    manager.room_transcripts[room_id].append(
-                        f"{subtitle_data['user_name']}: {subtitle_data['text']}"
-                    )
+        # Функция для отправки субтитров всем участникам (STT ОТКЛЮЧЕН)
+        # async def send_subtitle_to_room(subtitle_data: dict):
+        #     if not is_user_channel:
+        #         await manager.broadcast(room_id, subtitle_data)
+        #         if subtitle_data.get("is_final") and room_id in manager.room_transcripts:
+        #             manager.room_transcripts[room_id].append(
+        #                 f"{subtitle_data['user_name']}: {subtitle_data['text']}"
+        #             )
 
         stt_manager = None
-        if not is_user_channel:
-            # Инициализируем STT менеджер для этого пользователя
-            try:
-                stt_manager = STTManager(room_id, user_id, username, send_subtitle_to_room)
-                if room_id not in manager.stt_managers:
-                    manager.stt_managers[room_id] = {}
-                manager.stt_managers[room_id][user_id] = stt_manager
-                stt_task = asyncio.create_task(stt_manager.start())
-            except Exception as e:
-                import traceback
-                logging.error(f"Failed to initialize STT for user {user_id}: {e}")
-                logging.error(traceback.format_exc())
-                stt_manager = None
+        # if not is_user_channel:
+        #     # Инициализируем STT менеджер для этого пользователя
+        #     try:
+        #         stt_manager = STTManager(room_id, user_id, username, send_subtitle_to_room)
+        #         if room_id not in manager.stt_managers:
+        #             manager.stt_managers[room_id] = {}
+        #         manager.stt_managers[room_id][user_id] = stt_manager
+        #         stt_task = asyncio.create_task(stt_manager.start())
+        #     except Exception as e:
+        #         import traceback
+        #         logging.error(f"Failed to initialize STT for user {user_id}: {e}")
+        #         logging.error(traceback.format_exc())
+        #         stt_manager = None
 
         while True:
             # Ожидаем сообщения (текст или байты)
@@ -318,9 +318,9 @@ async def websocket_endpoint(
                 message_data = json.loads(received["text"])
                 msg_type = message_data.get("type")
             elif "bytes" in received:
-                # Это аудио-чанк от микрофона участника
-                if stt_manager:
-                    await stt_manager.add_audio(received["bytes"])
+                # STT ОТКЛЮЧЕН: Это аудио-чанк от микрофона участника
+                # if stt_manager:
+                #     await stt_manager.add_audio(received["bytes"])
                 continue
             else:
                 continue
