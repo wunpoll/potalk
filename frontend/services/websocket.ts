@@ -10,8 +10,13 @@ export class SignalingClient {
   private state: ConnectionState = 'disconnected';
   private stateListeners: Set<(state: ConnectionState) => void> = new Set();
 
-  constructor(url: string = 'ws://localhost:8000') {
-    this.url = url;
+  constructor() {
+    // Автоматически определяем URL бэкенда
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    // В проде (на Render) используем текущий домен, в деве — localhost:8000
+    const host = isLocal ? 'localhost:8000' : window.location.host;
+    this.url = `${protocol}//${host}`;
   }
 
   private setState(newState: ConnectionState) {

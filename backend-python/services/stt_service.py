@@ -3,7 +3,7 @@ import os
 import json
 import logging
 from typing import AsyncGenerator, Dict, List
-from google.cloud.speech_v2 import SpeechClient
+from google.cloud.speech_v2 import SpeechAsyncClient
 from google.cloud.speech_v2.types import cloud_speech as cloud_speech_types
 from google import genai
 from google.genai import types
@@ -31,7 +31,7 @@ class STTManager:
         self.user_name = user_name
         self.send_subtitle = send_subtitle_func
         
-        self.client = SpeechClient(client_options={
+        self.client = SpeechAsyncClient(client_options={
             "api_endpoint": f"{REGION}-speech.googleapis.com"
         })
         
