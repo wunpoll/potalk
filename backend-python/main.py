@@ -51,43 +51,49 @@ scheduler = AsyncIOScheduler()
 
 async def check_upcoming_meetings():
     """Проверяет scheduled-комнаты и отправляет напоминания за 5 минут до начала."""
-    async with AsyncSessionLocal() as db:
-        now = datetime.utcnow()
-        window_end = now + timedelta(minutes=5)
-        
-        result = await db.execute(
-            select(models.Room)
-            .where(
-                models.Room.status == models.RoomStatusEnum.scheduled,
-                models.Room.scheduled_start_at >= now,
-                models.Room.scheduled_start_at <= window_end,
-                models.Room.reminder_sent == False,
-            )
-        )
-        rooms = result.scalars().all()
-        
-        for room in rooms:
-            users_result = await db.execute(
-                select(models.User.email)
+    import asyncio
+    try:
+        async with AsyncSessionLocal() as db:
+            now = datetime.utcnow()
+            window_end = now + timedelta(minutes=5)
+            
+            result = await db.execute(
+                select(models.Room)
                 .where(
-                    models.User.organization_id == room.organization_id,
-                    models.User.status == models.StatusEnum.active,
+                    models.Room.status == models.RoomStatusEnum.scheduled,
+                    models.Room.scheduled_start_at >= now,
+                    models.Room.scheduled_start_at <= window_end,
+                    models.Room.reminder_sent == False,
                 )
             )
-            emails = users_result.scalars().all()
+            rooms = result.scalars().all()
             
-            for email in emails:
-                try:
-                    await send_meeting_reminder_email(
-                        email, room.name, room.invite_code, room.scheduled_start_at
+            for room in rooms:
+                users_result = await db.execute(
+                    select(models.User.email)
+                    .where(
+                        models.User.organization_id == room.organization_id,
+                        models.User.status == models.StatusEnum.active,
                     )
-                except Exception as e:
-                    logger.error(f"Failed to send reminder to {email}: {e}")
-            
-            # Отмечаем что напоминание отправлено
-            room.reminder_sent = True
-            await db.commit()
-            logger.info(f"Reminders sent for room {room.name}")
+                )
+                emails = users_result.scalars().all()
+                
+                for email in emails:
+                    try:
+                        await send_meeting_reminder_email(
+                            email, room.name, room.invite_code, room.scheduled_start_at
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to send reminder to {email}: {e}")
+                
+                # Отмечаем что напоминание отправлено
+                room.reminder_sent = True
+                await db.commit()
+                logger.info(f"Reminders sent for room {room.name}")
+    except asyncio.CancelledError:
+        logger.info("check_upcoming_meetings task was cancelled")
+    except Exception as e:
+        logger.error(f"Error in check_upcoming_meetings: {e}")
 
 
 @app.on_event("startup")
