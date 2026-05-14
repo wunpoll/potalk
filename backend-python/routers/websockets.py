@@ -172,19 +172,22 @@ async def websocket_endpoint(
             except Exception:
                 break
 
+    last_pong_ref = {"time": datetime.utcnow()}
+
     async def wait_pong():
         """Ждём pong или дисконнектим через 30 секунд."""
         while True:
             await asyncio.sleep(30)
-            # Если за 30 секунд не получили pong — дисконнект
-            try:
-                await websocket.close(code=1002, reason="Ping timeout")
-                break
-            except Exception:
-                break
+            if (datetime.utcnow() - last_pong_ref["time"]).total_seconds() > 30:
+                # Если за 30 секунд не получили pong — дисконнект
+                try:
+                    await websocket.close(code=1002, reason="Ping timeout")
+                    break
+                except Exception:
+                    break
 
     ping_task = asyncio.create_task(send_ping())
-    last_pong_ref = {"time": datetime.utcnow()}
+    pong_task = asyncio.create_task(wait_pong())
 
     if not is_user_channel:
         # ЛОГИКА ТАЙМЕРА: Если комната запланирована, переводим в статус ACTIVE
@@ -497,6 +500,7 @@ async def websocket_endpoint(
     except WebSocketDisconnect as e:
         logging.info(f"WebSocket disconnected for user {user_id} in room {room_id} with code {e.code}")
         ping_task.cancel()
+        pong_task.cancel()
         manager.disconnect(room_id, user_id)
         if not is_user_channel:
             await manager.broadcast(
@@ -512,6 +516,7 @@ async def websocket_endpoint(
         logging.error(f"CRITICAL WebSocket error for user {user_id} in room {room_id}: {e}")
         logging.error(traceback.format_exc())
         ping_task.cancel()
+        pong_task.cancel()
         manager.disconnect(room_id, user_id)
         if not is_user_channel:
             await manager.broadcast(
