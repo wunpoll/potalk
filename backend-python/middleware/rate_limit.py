@@ -18,8 +18,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return self.redis
 
     async def dispatch(self, request: Request, call_next):
-        # Пропускаем health-check и OPTIONS
-        if request.url.path == "/api/health" or request.method == "OPTIONS":
+        # Пропускаем WebSockets, health-check и OPTIONS
+        if request.scope["type"] != "http" or request.url.path == "/api/health" or request.method == "OPTIONS":
             return await call_next(request)
 
         r = await self._get_redis()

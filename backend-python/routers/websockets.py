@@ -126,7 +126,10 @@ async def websocket_endpoint(
         await websocket.close(code=1008, reason="No user_id in token")
         return
 
-    # 2. Получаем данные пользователя из БД
+    # 2. Подключаем пользователя к комнате (делаем accept как можно раньше)
+    await manager.connect(websocket, room_id, user_id)
+
+    # 3. Получаем данные пользователя из БД
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(models.User).where(models.User.id == user_id)
@@ -137,16 +140,38 @@ async def websocket_endpoint(
             if user
             else "Unknown User"
         )
-
-    # 3. Подключаем пользователя к комнате
-    await manager.connect(websocket, room_id, user_id)
     
     is_user_channel = room_id.startswith("user_")
 
     ping_task = None
     pong_task = None
+    last_pong_ref = {"time": datetime.utcnow()}
 
     try:
+        # 4. Создаём задачи для heartbeat (ТЕПЕРЬ ДЛЯ ВСЕХ, чтобы Render не рвал соединение)
+        async def send_ping():
+            """Отправляем ping каждые 15 секунд."""
+            while True:
+                await asyncio.sleep(15)
+                try:
+                    await websocket.send_json({"type": "ping"})
+                except Exception:
+                    break
+
+        async def wait_pong():
+            """Ждём pong или дисконнектим через 45 секунд."""
+            while True:
+                await asyncio.sleep(30)
+                if (datetime.utcnow() - last_pong_ref["time"]).total_seconds() > 45:
+                    try:
+                        await websocket.close(code=1002, reason="Ping timeout")
+                        break
+                    except Exception:
+                        break
+
+        ping_task = asyncio.create_task(send_ping())
+        pong_task = asyncio.create_task(wait_pong())
+
         if not is_user_channel:
             # 3.1. Записываем в БД (если ещё нет записи)
             async with AsyncSessionLocal() as db:
@@ -165,34 +190,6 @@ async def websocket_endpoint(
                     ))
                     await db.commit()
             
-            # 3.2. Создаём задачи для heartbeat
-    
-            async def send_ping():
-                """Отправляем ping каждые 15 секунд."""
-                while True:
-                    await asyncio.sleep(15)
-                    try:
-                        await websocket.send_json({"type": "ping"})
-                    except Exception:
-                        break
-
-            last_pong_ref = {"time": datetime.utcnow()}
-
-            async def wait_pong():
-                """Ждём pong или дисконнектим через 30 секунд."""
-                while True:
-                    await asyncio.sleep(30)
-                    if (datetime.utcnow() - last_pong_ref["time"]).total_seconds() > 30:
-                        # Если за 30 секунд не получили pong — дисконнект
-                        try:
-                            await websocket.close(code=1002, reason="Ping timeout")
-                            break
-                        except Exception:
-                            break
-
-            ping_task = asyncio.create_task(send_ping())
-            pong_task = asyncio.create_task(wait_pong())
-
             # ЛОГИКА ТАЙМЕРА: Если комната запланирована, переводим в статус ACTIVE
             async with AsyncSessionLocal() as db:
                 room_res = await db.execute(select(models.Room).where(models.Room.id == room_id))
