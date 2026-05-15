@@ -47,6 +47,9 @@ app.include_router(protocols.router)
 app.include_router(support.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api/analytics")
 
+from routers.livekit_router import router as livekit_router
+app.include_router(livekit_router)
+
 scheduler = AsyncIOScheduler()
 
 async def check_upcoming_meetings():
@@ -130,4 +133,4 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         result["redis"] = str(e)
     
     status = "ok" if all(v == "connected" for v in result.values()) else "degraded"
-    return {"status": status, **result}     
+    return {"status": status, **result}

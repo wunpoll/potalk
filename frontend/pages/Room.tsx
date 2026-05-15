@@ -10,6 +10,8 @@ import ConnectionStatus from '../components/ConnectionStatus.tsx';
 import { api } from '../services/api.ts';
 import { wsClient, ConnectionState } from '../services/websocket.ts';
 import { AlertTriangle } from 'lucide-react';
+import { livekitService } from '../services/livekitService';
+import { RoomEvent } from 'livekit-client';
 
 
 // Кастомное модальное окно для подтверждения
@@ -58,25 +60,12 @@ const ConfirmDialog: React.FC<{
 const MOCK_PROTOCOL: ProtocolResponse = {
   id: 'prot_123',
   room_id: 'room_123',
-  title: 'Project Alpha Kickoff Summary',
+  title: 'Протокол встречи отсутствует',
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
   summary_json: {
-    summary: 'Discussed the platform architecture and task distribution between modules. Agreed to use PostgreSQL and WebSockets for real-time signaling.',
-    topics: ['Architecture', 'Database', 'WebRTC Signaling']
-  },
-  decisions_json: {
-    decisions: [
-      'Use PostgreSQL as the primary database',
-      'Implement WebSocket server for signaling',
-      'Store protocols in JSONB format'
-    ]
-  },
-  action_items_json: {
-    action_items: [
-      { id: 'a1', task: 'Design ER diagram', assignee: 'Alex', deadline: '2026-04-20', status: 'pending' },
-      { id: 'a2', task: 'Setup WebSocket server', assignee: 'Dmitry', deadline: '2026-04-22', status: 'in_progress' }
-    ]
+    summary: 'Встреча завершилась без аудио или данные еще обрабатываются.',
+    topics: []
   },
   pdf_url: '#'
 };
@@ -109,8 +98,8 @@ const ru = {
     more: "Ещё",
   },
   media: {
-    title: "Медиа и AI обработка",
-    description: "Это место зарезервировано для модуля второго студента. Здесь будут отображаться WebRTC аудиопотоки, визуализация активного спикера и расшифровка речи в реальном времени.",
+    title: "Диалог встречи",
+    description: "Включите микрофон, чтобы начать обсуждение. Здесь будут отображаться субтитры в реальном времени.",
     listening: "Слушаем и расшифровываем...",
   },
   confirm: {
@@ -149,64 +138,16 @@ export default function Room() {
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
   const [isProtocolViewerOpen, setIsProtocolViewerOpen] = useState(false);
   
-  // LIVE SUBTITLES STATE
+          // LIVE SUBTITLES STATE
   const [liveSubtitles, setLiveSubtitles] = useState<Record<string, { username: string, text: string, isFinal: boolean }>>({});
+  const [dialogueHistory, setDialogueHistory] = useState<Array<{ username: string, text: string }>>([]);
   
+  const [protocolData, setProtocolData] = useState<ProtocolResponse | null>(null);
+
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [room, setRoom] = useState<RoomResponse | null>(null);
 
-  // ====== WebRTC Audio State ======
-  const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
-  const pendingIceCandidates = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
-  const localAudioRef = useRef<HTMLAudioElement | null>(null);
   const [audioConnected, setAudioConnected] = useState(false);
-  // ====== End WebRTC Audio State ======
-
-  // ====== AUDIO CAPTURE FOR STT ======
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
-
-  const startAudioCapture = async (stream: MediaStream) => {
-    try {
-      const audioContext = new AudioContext({ sampleRate: 16000 });
-      audioContextRef.current = audioContext;
-      
-      const source = audioContext.createMediaStreamSource(stream);
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
-      processorRef.current = processor;
-
-      source.connect(processor);
-      processor.connect(audioContext.destination);
-
-      processor.onaudioprocess = (e) => {
-        if (isMuted) return;
-        
-        const inputData = e.inputBuffer.getChannelData(0);
-        // Конвертируем Float32 в Int16 PCM (как ожидает Google STT)
-        const pcmData = new Int16Array(inputData.length);
-        for (let i = 0; i < inputData.length; i++) {
-          pcmData[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
-        }
-        
-        // Отправляем чанк через WebSocket
-        wsClient.sendBinary(pcmData.buffer);
-      };
-    } catch (err) {
-      console.error('Failed to start audio capture for STT:', err);
-    }
-  };
-
-  const stopAudioCapture = () => {
-    if (processorRef.current) {
-      processorRef.current.disconnect();
-      processorRef.current = null;
-    }
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
-  };
-  // ====== END AUDIO CAPTURE ======
 
   const [elapsedTime, setElapsedTime] = useState('00:00:00');
   const userStr = localStorage.getItem('user');
@@ -230,336 +171,48 @@ export default function Room() {
   });
 
 
-  // ====== WebRTC Audio Functions ======
-// Полностью ЗАМЕНИТЕ на это:
-const startAudio = async () => {
-  console.log('🎤 startAudio() called at', new Date().toISOString());
-  console.log('Current participants:', participants.map(p => p.user_id));
-  console.log('Current user ID:', currentUser?.id);
-  
-  if (audioConnected) {
-    console.log('Audio already connected, skipping');
-    return;
-  }
-  
-  if (!window.RTCPeerConnection) {
-    alert('Your browser does not support WebRTC audio calls');
-    return;
-  }
-  
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ 
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      } 
-    });
-    
-    // Запускаем захват для STT
-    startAudioCapture(stream);
-
-    // Создаём скрытый audio-элемент для локального мониторинга
-    localAudioRef.current = new Audio();
-    localAudioRef.current.srcObject = stream;
-    localAudioRef.current.muted = true;
-    localAudioRef.current.play().catch(() => {});
-    
-    // Создаём peer connection для каждого существующего участника
-    const otherParticipants = participants.filter(p => p.user_id !== currentUser?.id);
-    for (const p of otherParticipants) {
-      await createPeerConnection(p.user_id, stream);
+  // ====== LiveKit Audio ======
+  const startAudio = async () => {
+    if (audioConnected || !roomId) return;
+    try {
+      await livekitService.connect(roomId);
+      await livekitService.enableMicrophone();
+      setAudioConnected(true);
+      setIsMuted(false);
+      wsClient.send('presence', { status: 'speaking', is_muted: false });
+    } catch (err) {
+      console.error('LiveKit connection failed:', err);
+      alert('Не удалось подключиться к аудио');
     }
-    
-    setAudioConnected(true);
+  };
+
+  const stopAudio = async () => {
+    await livekitService.disconnect();
+    setAudioConnected(false);
     setIsMuted(true);
-    wsClient.updatePresence('speaking');
-  } catch (err) {
-    console.error('Microphone access denied:', err);
-    alert('Please allow microphone access to use audio.');
-  }
-};
+  };
 
-// Полностью ЗАМЕНИТЕ на это:
-const createPeerConnection = async (targetUserId: string, stream: MediaStream) => {
-  // ДОБАВЬТЕ ЭТУ ПРОВЕРКУ В НАЧАЛО:
-  if (!stream || stream.getTracks().length === 0) {
-    console.warn('⚠️ Cannot create peer connection: no stream');
-    return;
-  }
-
-  // Закрываем старое соединение если есть
-  const existing = peerConnections.current.get(targetUserId);
-  if (existing) {
-    existing.close();
-  }
-  
-  const pc = new RTCPeerConnection({
-    iceServers: [
-      {
-        urls: "stun:stun.relay.metered.ca:80",
-      },
-      {
-        urls: "turn:global.relay.metered.ca:80",
-        username: "c2427f3ffb09c685329001ec",
-        credential: "XfMYmyGC726SdO3q",
-      },
-      {
-        urls: "turn:global.relay.metered.ca:80?transport=tcp",
-        username: "c2427f3ffb09c685329001ec",
-        credential: "XfMYmyGC726SdO3q",
-      },
-      {
-        urls: "turn:global.relay.metered.ca:443",
-        username: "c2427f3ffb09c685329001ec",
-        credential: "XfMYmyGC726SdO3q",
-      },
-      {
-        urls: "turns:global.relay.metered.ca:443?transport=tcp",
-        username: "c2427f3ffb09c685329001ec",
-        credential: "XfMYmyGC726SdO3q",
-      },
-    ]
-  });
-  
-  // Добавляем локальные аудиодорожки
-  stream.getTracks().forEach(track => {
-    pc.addTrack(track, stream);
-  });
-  
-  // При получении ICE-кандидата — отправляем через signalling
-  pc.onicecandidate = (event) => {
-    if (event.candidate) {
-      wsClient.send('ice-candidate', { 
-        target: targetUserId, 
-        candidate: event.candidate 
-      });
+  const toggleMic = async () => {
+    if (!audioConnected) {
+      await startAudio();
+    } else if (!isMuted) {
+      await livekitService.disableMicrophone();
+      setIsMuted(true);
+      wsClient.send('presence', { status: 'idle', is_muted: true });
+    } else {
+      await livekitService.enableMicrophone();
+      setIsMuted(false);
+      wsClient.send('presence', { status: 'speaking', is_muted: false });
     }
   };
-  
-  // Отслеживаем состояние ICE
-  pc.oniceconnectionstatechange = () => {
-    console.log(`ICE state for ${targetUserId}:`, pc.iceConnectionState);
-  };
-  
-  // При получении удалённого аудиопотока — воспроизводим
-  pc.ontrack = (event) => {
-    console.log(`🔊 Received remote audio track from: ${targetUserId}`);
-    const audio = new Audio();
-    audio.srcObject = event.streams[0];
-    audio.autoplay = true;
-    audio.play().catch((err) => {
-      console.error('❌ Audio play failed:', err);
-    });
-  };
-  
-  peerConnections.current.set(targetUserId, pc);
-  
-  // Создаём и отправляем offer
-  const offer = await pc.createOffer();
-  await pc.setLocalDescription(offer);
-  wsClient.send('offer', { target: targetUserId, sdp: pc.localDescription });
-  console.log('📤 Sent offer to:', targetUserId);
-};
 
-// Полностью ЗАМЕНИТЕ на это:
-const handleWebRTCSignal = async (data: any) => {
-  console.log('📡 WebRTC SIGNAL received:', data.type, 'from:', data.from);
-  const { type, from, sdp, candidate } = data;
-  
-  try {
-    let pc: RTCPeerConnection | undefined = peerConnections.current.get(from);
-    
-    // Обработка Offer
-    if (type === 'offer' && sdp) {
-      console.log('🆕 Creating NEW peer connection for incoming offer from:', from);
-      
-      // Закрываем существующее соединение если есть
-      if (pc) {
-        console.log('Closing existing connection before creating new one');
-        pc.close();
-      }
-      
-      // Ждём, пока пользователь включит микрофон
-      if (!localAudioRef.current?.srcObject) {
-        console.warn('⚠️ No local audio stream yet, waiting for user to enable mic...');
-        // Буферизируем offer для обработки позже
-        if (!window['pendingOffers']) {
-          window['pendingOffers'] = [];
-        }
-        window['pendingOffers'].push(data);
-        return;
-      }
-      
-      const newPc = new RTCPeerConnection({
-        iceServers: [
-          {
-            urls: "stun:stun.relay.metered.ca:80",
-          },
-          {
-            urls: "turn:global.relay.metered.ca:80",
-            username: "c2427f3ffb09c685329001ec",
-            credential: "XfMYmyGC726SdO3q",
-          },
-          {
-            urls: "turn:global.relay.metered.ca:80?transport=tcp",
-            username: "c2427f3ffb09c685329001ec",
-            credential: "XfMYmyGC726SdO3q",
-          },
-          {
-            urls: "turn:global.relay.metered.ca:443",
-            username: "c2427f3ffb09c685329001ec",
-            credential: "XfMYmyGC726SdO3q",
-          },
-          {
-            urls: "turns:global.relay.metered.ca:443?transport=tcp",
-            username: "c2427f3ffb09c685329001ec",
-            credential: "XfMYmyGC726SdO3q",
-          },
-        ]
-      });
-      
-      newPc.onicecandidate = (event) => {
-        if (event.candidate) {
-          wsClient.send('ice-candidate', { target: from, candidate: event.candidate });
-        }
-      };
-      
-      newPc.oniceconnectionstatechange = () => {
-        console.log(`ICE state for ${from}:`, newPc.iceConnectionState);
-      };
-      
-      newPc.ontrack = (event) => {
-        console.log('🔊 Received remote audio track from:', from);
-        const audio = new Audio();
-        audio.srcObject = event.streams[0];
-        audio.autoplay = true;
-        audio.play().catch((err) => {
-          console.error('❌ Audio play failed:', err);
-        });
-      };
-      
-      const stream = localAudioRef.current?.srcObject as MediaStream;
-      if (stream) {
-        stream.getTracks().forEach(track => {
-          newPc.addTrack(track, stream);
-        });
-      }
-      
-      await newPc.setRemoteDescription(new RTCSessionDescription(sdp));
-      const answer = await newPc.createAnswer();
-      await newPc.setLocalDescription(answer);
-      wsClient.send('answer', { target: from, sdp: newPc.localDescription });
-      
-      peerConnections.current.set(from, newPc);
-      
-      // Добавляем накопленные ICE кандидаты
-      const candidates = pendingIceCandidates.current.get(from);
-      if (candidates && candidates.length > 0) {
-        console.log(`Adding ${candidates.length} buffered ICE candidates for ${from}`);
-        for (const cand of candidates) {
-          try {
-            await newPc.addIceCandidate(new RTCIceCandidate(cand));
-          } catch (err) {
-            console.error('Error adding buffered candidate:', err);
-          }
-        }
-        pendingIceCandidates.current.delete(from);
-      }
-    }
-    
-    // Обработка Answer
-    else if (type === 'answer' && sdp && pc) {
-      console.log('📞 Setting remote description for answer from:', from);
-      await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-    }
-    
-    // Обработка ICE кандидатов
-    else if (type === 'ice-candidate' && candidate) {
-      if (pc && pc.remoteDescription) {
-        // Если есть remote description - добавляем сразу
-        await pc.addIceCandidate(new RTCIceCandidate(candidate));
-      } else if (pc && !pc.remoteDescription) {
-        // Нет remote description - буферизируем
-        console.log(`Buffering ICE candidate for ${from} (remote description not ready)`);
-        if (!pendingIceCandidates.current.has(from)) {
-          pendingIceCandidates.current.set(from, []);
-        }
-        pendingIceCandidates.current.get(from)!.push(candidate);
-      } else if (!pc) {
-        console.log(`No peer connection for ${from}, dropping ICE candidate`);
-      }
-    }
-  } catch (err) {
-    console.error('❌ WebRTC signal error:', err);
-  }
-};
-
-const stopAudio = () => {
-  // Останавливаем захват STT
-  stopAudioCapture();
-
-  // Останавливаем локальный стрим
-  if (localAudioRef.current?.srcObject) {
-    const stream = localAudioRef.current.srcObject as MediaStream;
-    stream.getTracks().forEach(track => track.stop());
-    localAudioRef.current = null;
-  }
-  // Закрываем все peer connections
-  peerConnections.current.forEach(pc => pc.close());
-  peerConnections.current.clear();
-  setAudioConnected(false);
-};
-
-const toggleMic = () => {
-  if (!audioConnected) {
-    startAudio();
-    setIsMuted(false);
-    wsClient.send('presence', { status: 'speaking', is_muted: false, hand_raised: isHandRaised });
-  } else if (!isMuted) {
-    if (localAudioRef.current?.srcObject) {
-      const stream = localAudioRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach(track => { track.enabled = false; });
-    }
-    setIsMuted(true);
-    wsClient.send('presence', { status: 'idle', is_muted: true, hand_raised: isHandRaised });
-  } else {
-    if (localAudioRef.current?.srcObject) {
-      const stream = localAudioRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach(track => { track.enabled = true; });
-    }
-    setIsMuted(false);
-    wsClient.send('presence', { status: 'speaking', is_muted: false, hand_raised: isHandRaised });
-  }
-};
-
-
-// Добавьте после функции toggleMic, перед useEffect загрузки комнаты
-// ====== ОЧИСТКА ПРИ РЕКОННЕКТЕ WS ======
-useEffect(() => {
-  const handleConnectionState = (state: ConnectionState) => {
-    if (state === 'disconnected') {
-      console.log('🔄 WebSocket disconnected, cleaning up peer connections');
-      // Очищаем все peer connections
-      peerConnections.current.forEach(pc => {
-        try { pc.close(); } catch(e) {}
-      });
-      peerConnections.current.clear();
-      pendingIceCandidates.current.clear();
-      setAudioConnected(false);
-      // Сбрасываем флаг авто-запуска чтобы можно было запустить заново
-      autoStartAttemptedRef.current = false;
-    }
-  };
-  
-  const unsubscribe = wsClient.onStateChange(handleConnectionState);
-  return () => {
-    if (unsubscribe) unsubscribe();
-  };
-}, []);
-
-
-// ====== End WebRTC Audio Functions ======
+  // Отключаемся при выходе из комнаты
+  useEffect(() => {
+    return () => {
+      livekitService.disconnect();
+    };
+  }, []);
+  // ====== End LiveKit Audio ======
 
   // Загрузка данных комнаты
   useEffect(() => {
@@ -578,6 +231,11 @@ useEffect(() => {
         console.log('ROOM DATA:', JSON.stringify(roomData, null, 2));
         setRoom(roomData);
         
+        // Загружаем протоколы, если они есть в ответе
+        if (res.protocols && res.protocols.length > 0) {
+          setProtocolData(res.protocols[0]); // Берем самый свежий
+        }
+
         // Загружаем участников из ответа API (для ended/archived комнат)
         if ((roomData.status === 'ended' || roomData.status === 'archived') && res.participants) {
           const loadedParticipants = res.participants
@@ -774,9 +432,6 @@ useEffect(() => {
             presence_status: 'idle' as const,
           }];
         });
-        if (audioConnected && localAudioRef.current?.srcObject) {
-          createPeerConnection(data.user_id || data.userId, localAudioRef.current.srcObject as MediaStream);
-        }
       }
       // left block
       else if (data.message.includes('left')) {
@@ -798,13 +453,52 @@ useEffect(() => {
       }));
     };
 
-    const handleProtocolReady = (data: any) => {
-      setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        message: `Protocol "${data.title || 'Meeting Summary'}" is ready.`,
-        message_type: 'notification',
-        created_at: new Date().toISOString()
-      }]);
+    const handleMeetingEnded = (data: any) => {
+      if (data.message) {
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          message: data.message,
+          message_type: 'system',
+          created_at: new Date().toISOString()
+        }]);
+      }
+      
+      if (data.summary) {
+        setProtocolData(data.summary as ProtocolResponse);
+      }
+
+      if (data.summary?.topic) {
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          message: `Protocol "${data.summary.topic}" is ready.`,
+          message_type: 'notification',
+          created_at: new Date().toISOString()
+        }]);
+      }
+      
+      setRoom(prev => prev ? { ...prev, status: 'ended' } : null);
+    };
+
+    const handleSubtitle = (data: any) => {
+      setLiveSubtitles(prev => ({
+        ...prev,
+        [data.user_id]: {
+          username: data.user_name,
+          text: data.text,
+          isFinal: data.is_final
+        }
+      }));
+
+      if (data.is_final) {
+        setDialogueHistory(prev => [...prev, { username: data.user_name, text: data.text }]);
+        setTimeout(() => {
+          setLiveSubtitles(prev => {
+            const next = { ...prev };
+            delete next[data.user_id];
+            return next;
+          });
+        }, 3000);
+      }
     };
 
     const handleChatHistory = (data: any) => {
@@ -815,14 +509,12 @@ useEffect(() => {
 
     wsClient.on('chat', handleIncomingChat);
     wsClient.on('chat_history', handleChatHistory);
-    wsClient.on('chat_edited', handleChatEdited);   // <-- ДОБАВИТЬ
-    wsClient.on('chat_deleted', handleChatDeleted); // <-- ДОБАВИТЬ
+    wsClient.on('chat_edited', handleChatEdited);
+    wsClient.on('chat_deleted', handleChatDeleted);
     wsClient.on('system', handleSystem);
     wsClient.on('presence', handlePresence);
-    wsClient.on('protocol_ready', handleProtocolReady);
-    wsClient.on('offer', handleWebRTCSignal);
-    wsClient.on('answer', handleWebRTCSignal);
-    wsClient.on('ice-candidate', handleWebRTCSignal);
+    wsClient.on('meeting_ended', handleMeetingEnded);
+    wsClient.on('subtitle', handleSubtitle);
 
     const handleParticipantsList = (data: any) => {
       console.log('📋 Participants list received:', data);
@@ -875,24 +567,10 @@ useEffect(() => {
       wsClient.off('chat_deleted', handleChatDeleted); // <-- ДОБАВИТЬ
       wsClient.off('system', handleSystem);
       wsClient.off('presence', handlePresence);
-      wsClient.off('protocol_ready', handleProtocolReady);
-      wsClient.off('participants_list', handleParticipantsList);
-      wsClient.off('subtitle', handleSubtitle);
       wsClient.off('meeting_ended', handleMeetingEnded);
+      wsClient.off('subtitle', handleSubtitle);
+      wsClient.off('participants_list', handleParticipantsList);
       wsClient.disconnect();
-      wsClient.off('offer', handleWebRTCSignal);
-      wsClient.off('answer', handleWebRTCSignal);
-      wsClient.off('ice-candidate', handleWebRTCSignal);
-      
-      // ДОБАВЬТЕ ЭТИ СТРОКИ:
-      // Полная очистка всех peer connections
-      peerConnections.current.forEach(pc => {
-        try { pc.close(); } catch(e) {}
-      });
-      peerConnections.current.clear();
-      pendingIceCandidates.current.clear();
-      
-      stopAudio();
     };
   }, [roomId, navigate]);
 
@@ -943,7 +621,7 @@ useEffect(() => {
       danger: true,
       onConfirm: async () => {
         try {
-          wsClient.send('end_room', { roomId });
+          wsClient.send('end_meeting', { roomId });
           await api.rooms.end(roomId);
           navigate('/dashboard');
         } catch (err) { 
@@ -977,64 +655,6 @@ useEffect(() => {
     setEditingMessage(null);
     setReplyTo(null);
     wsClient.updatePresence('idle');
-  };
-
-  // Компонент индикатора уровня звука
-  const AudioLevelIndicator: React.FC<{ stream: MediaStream | null; userId: string }> = ({ stream, userId }) => {
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    
-    useEffect(() => {
-      if (!stream || !canvasRef.current) return;
-      
-      const audioContext = new AudioContext();
-      const analyser = audioContext.createAnalyser();
-      const source = audioContext.createMediaStreamSource(stream);
-      source.connect(analyser);
-      analyser.fftSize = 32;
-      const bufferLength = analyser.frequencyBinCount;
-      const dataArray = new Uint8Array(bufferLength);
-      
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d')!;
-      
-      let animationId: number;
-      const draw = () => {
-        animationId = requestAnimationFrame(draw);
-        analyser.getByteFrequencyData(dataArray);
-        
-        const average = dataArray.reduce((a, b) => a + b, 0) / bufferLength;
-        
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        
-        // Градиент от зелёного к красному
-        const hue = 120 - (average / 255) * 120;
-        ctx.fillStyle = `hsl(${hue}, 80%, 50%)`;
-        
-        const barWidth = canvas.width;
-        const barHeight = (average / 255) * canvas.height;
-        ctx.fillRect(0, canvas.height - barHeight, barWidth, barHeight);
-        
-        // Отправляем presence если громкость выше порога
-        if (average > 30) {
-          wsClient.updatePresence('speaking');
-        }
-      };
-      draw();
-      
-      return () => {
-        cancelAnimationFrame(animationId);
-        audioContext.close();
-      };
-    }, [stream]);
-    
-    return (
-      <canvas 
-        ref={canvasRef} 
-        width={20} 
-        height={40} 
-        className="rounded-sm opacity-80"
-      />
-    );
   };
 
   return (
@@ -1109,12 +729,6 @@ useEffect(() => {
                 </div>
                 {(room?.status !== 'ended' && room?.status !== 'archived') && (
                   <div className="flex items-center space-x-2 text-gray-400">
-                    {audioConnected && !isMuted && localAudioRef.current?.srcObject && (
-                      <AudioLevelIndicator 
-                        stream={localAudioRef.current.srcObject as MediaStream} 
-                        userId={currentUser?.id || ''} 
-                      />
-                    )}
                     {isHandRaised && <Hand className="w-4 h-4 text-yellow-500" />}
                     {isMuted ? <MicOff className="w-4 h-4 text-red-400" /> : <Mic className="w-4 h-4 text-green-400" />}
                   </div>
@@ -1177,34 +791,76 @@ useEffect(() => {
           ) : (
             /* Активная встреча — Media & AI */
             <>
-              <div className="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none">
-                <Mic className="w-96 h-96" />
-              </div>
-              <div className="max-w-2xl w-full bg-gray-800/50 border border-gray-700 border-dashed rounded-2xl p-12 text-center backdrop-blur-sm">
-                <h2 className="text-2xl font-bold text-gray-300 mb-4">{ru.media.title}</h2>
-                <p className="text-gray-400 mb-6">{ru.media.description}</p>
-                <div className="flex flex-col items-center">
-                  <div className="flex justify-center space-x-4 mb-4">
-                    <div className="h-3 w-12 bg-blue-500 rounded-full animate-pulse"></div>
-                    <div className="h-3 w-16 bg-blue-400 rounded-full animate-pulse delay-75"></div>
-                    <div className="h-3 w-8 bg-blue-600 rounded-full animate-pulse delay-150"></div>
+              {dialogueHistory.length === 0 ? (
+                <>
+                  <div className="absolute inset-0 flex items-center justify-center opacity-5 pointer-events-none">
+                    <Mic className="w-96 h-96" />
                   </div>
-                  <p className="text-sm text-blue-400 font-medium">{ru.media.listening}</p>
+                  <div className="max-w-2xl w-full bg-gray-800/50 border border-gray-700 border-dashed rounded-2xl p-12 text-center backdrop-blur-sm">
+                    <h2 className="text-2xl font-bold text-gray-300 mb-4">{ru.media.title}</h2>
+                    <p className="text-gray-400 mb-6">{ru.media.description}</p>
+                    <div className="flex flex-col items-center">
+                      <div className="flex justify-center space-x-4 mb-4">
+                        <div className="h-3 w-12 bg-blue-500 rounded-full animate-pulse"></div>
+                        <div className="h-3 w-16 bg-blue-400 rounded-full animate-pulse delay-75"></div>
+                        <div className="h-3 w-8 bg-blue-600 rounded-full animate-pulse delay-150"></div>
+                      </div>
+                      <p className="text-sm text-blue-400 font-medium">{ru.media.listening}</p>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="max-w-3xl w-full h-[80%] bg-gray-800/80 border border-gray-700 rounded-2xl p-6 flex flex-col backdrop-blur-md shadow-2xl relative z-10 overflow-hidden">
+                  <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-700">
+                    <h2 className="text-xl font-bold text-gray-200">{ru.media.title}</h2>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
+                      <span className="text-xs text-red-400 uppercase tracking-widest font-semibold">Live</span>
+                    </div>
+                  </div>
+                  <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
+                    {dialogueHistory.map((msg, idx) => (
+                      <div key={idx} className="flex flex-col animate-fade-in">
+                        <span className="text-xs font-bold text-purple-400 uppercase tracking-wider mb-1 px-1">
+                          {msg.username}
+                        </span>
+                        <div className="bg-gray-700/50 p-3 rounded-lg rounded-tl-none border border-gray-600/50 shadow-sm inline-block max-w-[90%] text-gray-200">
+                          {msg.text}
+                        </div>
+                      </div>
+                    ))}
+                    
+                    {/* Текущие (еще не завершенные) субтитры */}
+                    {Object.values(liveSubtitles).filter(sub => !sub.isFinal).map((sub, idx) => (
+                       <div key={`live-${idx}`} className="flex flex-col animate-fade-in opacity-80">
+                         <span className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-1 px-1">
+                           {sub.username}
+                         </span>
+                         <div className="bg-blue-900/20 p-3 rounded-lg rounded-tl-none border border-blue-800/50 shadow-sm inline-block max-w-[90%] text-gray-300">
+                           {sub.text}
+                           <span className="inline-block w-1.5 h-3 ml-1 bg-blue-500 animate-pulse"></span>
+                         </div>
+                       </div>
+                    ))}
+                    <div ref={chatEndRef} />
+                  </div>
                 </div>
-              </div>
+              )}
 
-              {/* LIVE SUBTITLES OVERLAY */}
-              <div className="absolute bottom-10 left-0 right-0 flex flex-col items-center pointer-events-none space-y-2 px-6">
-                {Object.entries(liveSubtitles).map(([uid, sub]) => (
-                  <div key={uid} className="bg-black/60 backdrop-blur-md px-4 py-2 rounded-xl border border-white/10 animate-fade-in max-w-lg">
-                    <p className="text-[10px] text-blue-400 font-bold uppercase tracking-wider mb-0.5">{sub.username}</p>
-                    <p className={`text-sm ${sub.isFinal ? 'text-white' : 'text-gray-300'}`}>
-                      {sub.text}
-                      {!sub.isFinal && <span className="inline-block w-1.5 h-3 ml-1 bg-blue-500 animate-pulse"></span>}
-                    </p>
-                  </div>
-                ))}
-              </div>
+              {/* LIVE SUBTITLES OVERLAY (Floating for small popups if needed, but mainly we use the history box above now) */}
+              {dialogueHistory.length === 0 && (
+                <div className="absolute bottom-10 left-0 right-0 flex flex-col items-center pointer-events-none space-y-2 px-6 z-20">
+                  {Object.entries(liveSubtitles).map(([uid, sub]) => (
+                    <div key={uid} className="bg-black/60 backdrop-blur-md px-4 py-2 rounded-xl border border-white/10 animate-fade-in max-w-lg">
+                      <p className="text-[10px] text-blue-400 font-bold uppercase tracking-wider mb-0.5">{sub.username}</p>
+                      <p className={`text-sm ${sub.isFinal ? 'text-white' : 'text-gray-300'}`}>
+                        {sub.text}
+                        {!sub.isFinal && <span className="inline-block w-1.5 h-3 ml-1 bg-blue-500 animate-pulse"></span>}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </>
           )}
         </div>
@@ -1488,7 +1144,7 @@ useEffect(() => {
       <ProtocolViewer 
         isOpen={isProtocolViewerOpen} 
         onClose={() => setIsProtocolViewerOpen(false)} 
-        protocol={MOCK_PROTOCOL} 
+        protocol={protocolData || MOCK_PROTOCOL} 
       />
 
       {/* Модальное окно подтверждения - ВСТАВЬТЕ ЭТО ЗДЕСЬ */}

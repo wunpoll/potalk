@@ -37,7 +37,8 @@ class STTManager:
         self._audio_queue = asyncio.Queue()
         self._is_running = False
         self._transcript_list = []
-        self._recognizer_name = f"projects/{PROJECT_ID}/locations/{REGION}/recognizers/_"
+        # Используем тот же именованный распознаватель, что и в stt.py
+        self._recognizer_name = f"projects/{PROJECT_ID}/locations/{REGION}/recognizers/russian-diarization-v2"
 
     async def add_audio(self, chunk: bytes):
         """Добавляет чанк аудио в очередь для обработки."""
@@ -45,22 +46,7 @@ class STTManager:
 
     async def _request_generator(self) -> AsyncGenerator:
         """Генератор запросов для Google STT V2."""
-        # 1. Первый запрос с конфигурацией
-        recognition_config = cloud_speech_types.RecognitionConfig(
-            explicit_decoding_config=cloud_speech_types.ExplicitDecodingConfig(
-                encoding=cloud_speech_types.ExplicitDecodingConfig.AudioEncoding.LINEAR16,
-                sample_rate_hertz=RATE,
-                audio_channel_count=1,
-            ),
-            language_codes=["ru-RU"],
-            model="long",
-            features=cloud_speech_types.RecognitionFeatures(
-                enable_automatic_punctuation=True,
-            ),
-        )
-
         streaming_config = cloud_speech_types.StreamingRecognitionConfig(
-            config=recognition_config,
             streaming_features=cloud_speech_types.StreamingRecognitionFeatures(
                 interim_results=True
             )
@@ -141,12 +127,13 @@ async def generate_meeting_protocol(room_id: str, full_transcript: str):
     
     prompt = f"""
     Ты — профессиональный секретарь. Проанализируй транскрипт созвона.
-    Текст уже разделен по именам участников. Составь подробный протокол встречи.
+    Текст уже разделен по именам участников. Составь подробный протокол встречи и выведи итоговый диалог по ролям.
     
     Верни результат строго в формате JSON.
     
     Структура:
     {{
+      "restored_dialogue": [ {{"speaker": "имя", "text": "реплика"}} ],
       "topic": "Тема встречи",
       "summary": "Краткая суть обсуждения",
       "decisions": ["Решение 1", "Решение 2"],
@@ -160,12 +147,22 @@ async def generate_meeting_protocol(room_id: str, full_transcript: str):
 
     try:
         ai_client = get_ai_client()
-        response = ai_client.models.generate_content(
-            model='gemini-2.0-flash-exp', # Используем актуальную модель
+        response = await asyncio.to_thread(
+            ai_client.models.generate_content,
+            model='gemini-3-flash-preview',
             contents=prompt,
             config=types.GenerateContentConfig(
-                temperature=0.7,
+                temperature=1,
+                top_p=0.95,
+                max_output_tokens=65535,
                 response_mime_type="application/json",
+                safety_settings=[
+                    types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="OFF"),
+                    types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="OFF"),
+                    types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="OFF"),
+                    types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="OFF")
+                ],
+                thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.HIGH)
             )
         )
         return json.loads(response.text)

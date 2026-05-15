@@ -285,6 +285,26 @@ async def get_room_by_id(
             "left_at": p.left_at.isoformat() if p.left_at else None,
         })
 
+        # Получаем протоколы комнаты
+    protocols_result = await db.execute(
+        select(models.Protocol).where(models.Protocol.room_id == room_id).order_by(models.Protocol.created_at.desc())
+    )
+    protocols = protocols_result.scalars().all()
+    protocols_list = []
+    for prot in protocols:
+        protocols_list.append({
+            "id": str(prot.id),
+            "room_id": str(prot.room_id),
+            "title": prot.title,
+            "summary_json": prot.summary_json,
+            "content_json": prot.content_json,
+            "decisions_json": prot.decisions_json,
+            "action_items_json": prot.action_items_json,
+            "topics_json": prot.topics_json,
+            "created_at": prot.created_at.isoformat() + "Z",
+            "updated_at": prot.updated_at.isoformat() + "Z",
+        })
+
     return {
         "success": True,
         "room": {
@@ -307,10 +327,43 @@ async def get_room_by_id(
             "updated_at": room.updated_at,
         },
         "participants": participants_list,
-        "protocols": [],
+        "protocols": protocols_list,
     }
 
-# 4. ИСТОРИЯ ЧАТА
+# 4. СПИСОК ПРОТОКОЛОВ КОМНАТЫ
+@router.get("/{room_id}/protocols")
+async def get_room_protocols(
+    room_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+):
+    result = await db.execute(
+        select(models.Protocol).where(models.Protocol.room_id == room_id).order_by(models.Protocol.created_at.desc())
+    )
+    protocols = result.scalars().all()
+    
+    protocols_list = []
+    for prot in protocols:
+        protocols_list.append({
+            "id": str(prot.id),
+            "room_id": str(prot.room_id),
+            "title": prot.title,
+            "summary_json": prot.summary_json,
+            "content_json": prot.content_json,
+            "decisions_json": prot.decisions_json,
+            "action_items_json": prot.action_items_json,
+            "topics_json": prot.topics_json,
+            "created_at": prot.created_at.isoformat() + "Z",
+            "updated_at": prot.updated_at.isoformat() + "Z",
+        })
+        
+    return {
+        "success": True,
+        "protocols": protocols_list,
+        "total": len(protocols_list)
+    }
+
+# 5. ИСТОРИЯ ЧАТА
 @router.get("/{room_id}/messages")
 async def get_chat_history(
     room_id: str,

@@ -286,41 +286,44 @@ async def websocket_endpoint(
                     "participants": participants_info,
                 })
 
-        # Функция для отправки субтитров всем участникам (STT ОТКЛЮЧЕН)
-        # async def send_subtitle_to_room(subtitle_data: dict):
-        #     if not is_user_channel:
-        #         await manager.broadcast(room_id, subtitle_data)
-        #         if subtitle_data.get("is_final") and room_id in manager.room_transcripts:
-        #             manager.room_transcripts[room_id].append(
-        #                 f"{subtitle_data['user_name']}: {subtitle_data['text']}"
-        #             )
+        # Функция для отправки субтитров всем участникам
+        async def send_subtitle_to_room(subtitle_data: dict):
+            if not is_user_channel:
+                await manager.broadcast(room_id, subtitle_data)
+                if subtitle_data.get("is_final") and room_id in manager.room_transcripts:
+                    manager.room_transcripts[room_id].append(
+                        f"{subtitle_data['user_name']}: {subtitle_data['text']}"
+                    )
 
         stt_manager = None
-        # if not is_user_channel:
-        #     # Инициализируем STT менеджер для этого пользователя
-        #     try:
-        #         stt_manager = STTManager(room_id, user_id, username, send_subtitle_to_room)
-        #         if room_id not in manager.stt_managers:
-        #             manager.stt_managers[room_id] = {}
-        #         manager.stt_managers[room_id][user_id] = stt_manager
-        #         stt_task = asyncio.create_task(stt_manager.start())
-        #     except Exception as e:
-        #         import traceback
-        #         logging.error(f"Failed to initialize STT for user {user_id}: {e}")
-        #         logging.error(traceback.format_exc())
-        #         stt_manager = None
+        if not is_user_channel:
+            # Инициализируем STT менеджер для этого пользователя
+            try:
+                stt_manager = STTManager(room_id, user_id, username, send_subtitle_to_room)
+                if room_id not in manager.stt_managers:
+                    manager.stt_managers[room_id] = {}
+                manager.stt_managers[room_id][user_id] = stt_manager
+                stt_task = asyncio.create_task(stt_manager.start())
+            except Exception as e:
+                import traceback
+                logging.error(f"Failed to initialize STT for user {user_id}: {e}")
+                logging.error(traceback.format_exc())
+                stt_manager = None
 
         while True:
             # Ожидаем сообщения (текст или байты)
             received = await websocket.receive()
             
+            if received.get("type") == "websocket.disconnect":
+                break
+
             if "text" in received:
                 message_data = json.loads(received["text"])
                 msg_type = message_data.get("type")
             elif "bytes" in received:
-                # STT ОТКЛЮЧЕН: Это аудио-чанк от микрофона участника
-                # if stt_manager:
-                #     await stt_manager.add_audio(received["bytes"])
+                # Это аудио-чанк от микрофона участника
+                if stt_manager:
+                    await stt_manager.add_audio(received["bytes"])
                 continue
             else:
                 continue
@@ -422,35 +425,6 @@ async def websocket_endpoint(
                 }
                 await manager.broadcast(room_id, presence_msg, exclude_user=user_id)
 
-            elif msg_type in ("offer", "answer", "ice-candidate"):
-                target = message_data.get("target")
-                signaling_msg = {
-                    "type": msg_type,
-                    "from": user_id,
-                    "username": username,
-                    "sdp": message_data.get("sdp"),
-                    "candidate": message_data.get("candidate"),
-                }
-                
-                # Логируем для отладки
-                print(f"📡 Signaling {msg_type} from {user_id} to {target}")
-                
-                # Отправляем сообщение конкретному участнику
-                if target and room_id in manager.ws_connections:
-                    ws = manager.ws_connections[room_id].get(target)
-                    if ws:
-                        try:
-                            await ws.send_json(signaling_msg)
-                            print(f"✓ {msg_type} sent to {target}")
-                        except Exception as e:
-                            print(f"✗ Failed to send {msg_type} to {target}: {e}")
-                    else:
-                        # Сохраняем сообщение если пользователь не онлайн
-                        print(f"⚠️ Target {target} not found in room {room_id}")
-                        # Здесь можно добавить буферизацию в Redis
-                else:
-                    print(f"⚠️ Invalid target or room_id: {target}, {room_id}")
-
             elif msg_type == "end_meeting":
                 # Только создатель или админ должен иметь право завершать
                 full_transcript = "\n".join(manager.room_transcripts.get(room_id, []))
@@ -474,7 +448,7 @@ async def websocket_endpoint(
                                 created_by=user_id,
                                 title=f"Protocol: {room.name if room else 'Meeting'}",
                                 summary_json=protocol_data,
-                                content_json={"transcript": full_transcript},
+                                content_json={"transcript": full_transcript, "dialogue": protocol_data.get("restored_dialogue")},
                                 topics_json={"topics": protocol_data.get("topic")},
                                 decisions_json={"decisions": protocol_data.get("decisions")},
                                 action_items_json={"action_items": protocol_data.get("tasks")}
@@ -486,7 +460,18 @@ async def websocket_endpoint(
                             await manager.broadcast(room_id, {
                                 "type": "meeting_ended",
                                 "protocol_id": str(new_protocol.id),
-                                "summary": protocol_data
+                                "summary": {
+                                    "id": str(new_protocol.id),
+                                    "room_id": room_id,
+                                    "title": new_protocol.title,
+                                    "summary_json": protocol_data,
+                                    "content_json": {"transcript": full_transcript, "dialogue": protocol_data.get("restored_dialogue")},
+                                    "topics_json": {"topics": protocol_data.get("topic")},
+                                    "decisions_json": {"decisions": protocol_data.get("decisions")},
+                                    "action_items_json": {"action_items": protocol_data.get("tasks")},
+                                    "created_at": new_protocol.created_at.isoformat() + "Z",
+                                    "updated_at": new_protocol.updated_at.isoformat() + "Z" if new_protocol.updated_at else new_protocol.created_at.isoformat() + "Z"
+                                }
                             })
                 else:
                     await manager.broadcast(room_id, {"type": "meeting_ended", "message": "No audio recorded"})

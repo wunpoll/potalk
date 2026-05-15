@@ -34,7 +34,9 @@ DATABASE_URL = os.getenv(
     "postgresql+asyncpg://postgres:postgres@localhost:5432/platform_db"
 )
 
-# Render.com требует SSL для подключения
+# Render.com требует SSL для подключения, но локально обычно нет
+ssl_args = {"ssl": "require"} if "render.com" in DATABASE_URL or os.getenv("DB_SSL") == "true" else {}
+
 engine = create_async_engine(
     DATABASE_URL, 
     echo=True,
@@ -42,9 +44,7 @@ engine = create_async_engine(
     max_overflow=10,
     pool_pre_ping=True,
     pool_recycle=3600,
-    connect_args={
-        "ssl": "require"
-    }
+    connect_args=ssl_args
 )
 AsyncSessionLocal = async_sessionmaker(
     engine, 

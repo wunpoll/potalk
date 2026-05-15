@@ -212,8 +212,30 @@ export default function ProtocolViewer({ protocol, isOpen, onClose }: ProtocolVi
               </section>
             )}
 
+            {/* Dialogue Section */}
+            {protocol.content_json && protocol.content_json.dialogue && protocol.content_json.dialogue.length > 0 && (
+              <section className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+                <h3 className="text-md font-bold text-gray-900 mb-4 flex items-center">
+                  <User className="w-4 h-4 mr-2 text-purple-500" />
+                  Восстановленный диалог
+                </h3>
+                <div className="space-y-4">
+                  {protocol.content_json.dialogue.map((reply: any, idx: number) => (
+                    <div key={idx} className="flex flex-col">
+                      <span className="text-xs font-bold text-purple-600 uppercase tracking-wider mb-1">
+                        {reply.speaker}
+                      </span>
+                      <p className="text-sm text-gray-800 bg-gray-50 p-3 rounded-lg border border-gray-100">
+                        {reply.text}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
             {/* Empty state - если нет данных */}
-            {!protocol.summary_json && !protocol.decisions_json && !protocol.action_items_json && (
+            {!protocol.summary_json && !protocol.decisions_json && !protocol.action_items_json && !protocol.content_json?.dialogue && (
               <div className="bg-white p-12 rounded-xl border border-gray-200 text-center">
                 <AlertCircle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                 <h3 className="text-lg font-semibold text-gray-700 mb-2">Нет данных</h3>

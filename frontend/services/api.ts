@@ -120,6 +120,9 @@ export const api = {
       fetchApi<GenericResponse>(`/rooms/${roomId}/invite-all`, { 
         method: 'POST' 
       }),
+
+    getLiveKitToken: (roomId: string) => 
+      fetchApi<{token: string, url: string}>(`/rooms/${roomId}/livekit-token`, { method: 'GET' }),
   },
 
   protocols: {
