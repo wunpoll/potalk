@@ -155,6 +155,11 @@ export default function Room() {
 
   const wsConnectedRef = useRef(false);
   const autoStartAttemptedRef = useRef(false);
+  const roomStatusRef = useRef<string | undefined>();
+
+  useEffect(() => {
+    roomStatusRef.current = room?.status;
+  }, [room?.status]);
 
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
@@ -355,7 +360,7 @@ export default function Room() {
       return;
     }
     
-    if (room?.status !== 'ended' && room?.status !== 'archived') {
+    if (roomStatusRef.current !== 'ended' && roomStatusRef.current !== 'archived') {
       wsClient.connect(roomId, token);
     }
 
@@ -518,7 +523,7 @@ export default function Room() {
 
     const handleParticipantsList = (data: any) => {
       console.log('📋 Participants list received:', data);
-      if (room?.status === 'ended' || room?.status === 'archived') return;
+      if (roomStatusRef.current === 'ended' || roomStatusRef.current === 'archived') return;
       if (data.participants) {
         const list = data.participants
           .filter((p: any) => (p.user_id || p.userId) !== currentUser?.id)
@@ -830,7 +835,7 @@ export default function Room() {
                       </div>
                     ))}
                     
-                    {/* Текущие (еще не завершенные) субтитры */}
+                    {/* Текущие (ещё не завершенные) субтитры */}
                     {Object.values(liveSubtitles).filter(sub => !sub.isFinal).map((sub, idx) => (
                        <div key={`live-${idx}`} className="flex flex-col animate-fade-in opacity-80">
                          <span className="text-xs font-bold text-blue-400 uppercase tracking-wider mb-1 px-1">
